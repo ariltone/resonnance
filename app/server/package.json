@@ -1,0 +1,21 @@
+{
+  "name": "resonance-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test:bloc3": "node tests/bloc3.test.js",
+    "test:bloc3del": "node tests/bloc3-delete.test.js",
+    "test:bloc4": "node tests/bloc4.test.js",
+    "test:bloc5": "node tests/bloc5.test.js",
+    "test:e2e": "node tests/bloc4-e2e.test.js",
+    "test": "node tests/bloc3.test.js && node tests/bloc3-delete.test.js && node tests/bloc4.test.js && node tests/bloc5.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}

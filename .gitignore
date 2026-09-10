@@ -1,0 +1,32 @@
+# Dépendances
+node_modules/
+app/server/node_modules/
+app/client/node_modules/
+
+# SQLite temporaires (WAL) — ne jamais committer
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+
+# Fichiers lock LibreOffice / temporaires
+.~lock*
+.~*
+~$*
+*.tmp
+*.temp
+
+# Builds / logs / env
+dist/
+dist-ssr/
+*.log
+logs/
+.env
+.env.local
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -1,0 +1,119 @@
+Nous reprenons le projet **RÉSONANCE**.
+
+Utilise comme état de référence tout ce qui a déjà été défini concernant RÉSONANCE. **Ne repars pas de zéro et ne mélange jamais RÉSONANCE avec SPIRMA.**
+
+### État actuel du projet
+
+RÉSONANCE est un jeu introspectif et projectif conçu comme une **expérience ludique**, et non comme un questionnaire, un test psychologique ou une application thérapeutique.
+
+Principe central :
+
+> **Le joueur donne du sens à ce qu’il choisit. RÉSONANCE crée les conditions de cette résonance. L’application ne donne pas de sens à sa place.**
+
+Le parcours repose notamment sur :
+
+* des textes ou situations ;
+* des choix intuitifs, notamment visuels ;
+* la résonance entre ce qui est lu et ce qui est choisi ;
+* la possibilité d’exprimer ce que le choix évoque ;
+* des liens ou récurrences pouvant apparaître au cours du parcours ;
+* la notion d’angle mort, toujours proposée sous forme d’hypothèse ;
+* un carnet conservant le cheminement ;
+* une évolution pouvant conduire à l’émergence d’un **« Je suis »**, non comme diagnostic ou étiquette, mais comme moteur de trajectoire et d’action.
+
+Phrase importante du projet :
+
+> **« Si je t’ai perdu, ce n’est pas grave. Moi, j’arrive à me suivre. »**
+
+### Documents de référence déjà établis
+
+1. Cahier des charges fonctionnel & conceptuel
+2. Cahier des charges technique
+3. Cahier des règles du jeu
+4. Spécifications du contenu et du moteur éditorial
+5. Cahier UX/UI & direction artistique
+6. Spécifications IA & cadre éthique
+7. Cahier de recette et tests fonctionnels
+
+Le dossier de conception est donc **suffisamment complet pour commencer la construction**.
+
+### Point important sur les choix visuels
+
+Nous avons également commencé à explorer l’idée de faire choisir au joueur, de manière aléatoire ou semi-aléatoire, des **formes/images en résonance avec un texte**.
+
+Cette partie est encore une **piste de recherche/conception**, notamment concernant ce qu’une approche projective permet réellement d’observer.
+
+Ne transforme pas automatiquement ces hypothèses en règles définitives.
+
+En particulier :
+
+* une image n’a pas de signification psychologique universelle ;
+* le système ne doit jamais décider ce que signifie une image pour le joueur ;
+* toute interprétation doit rester une hypothèse ouverte ;
+* le joueur reste souverain et peut accepter, nuancer, modifier ou rejeter toute proposition.
+
+### IA
+
+L’IA est conçue comme un outil de **mise en perspective**, jamais comme un psychologue, diagnosticien ou oracle.
+
+Elle peut :
+
+* reformuler ;
+* poser des questions ;
+* relier des éléments explicitement présents dans le parcours ;
+* signaler certaines récurrences ;
+* proposer une hypothèse ;
+* aider à formuler le « Je suis ».
+
+Elle ne doit jamais :
+
+* diagnostiquer ;
+* profiler psychologiquement ;
+* attribuer une signification fixe aux images ;
+* prétendre connaître l’inconscient du joueur ;
+* inventer des éléments du parcours ;
+* imposer une interprétation ;
+* avoir le dernier mot sur la personne.
+
+Règle fondamentale :
+
+> **L’IA peut avoir une hypothèse sur le parcours. Elle ne doit jamais avoir le dernier mot sur la personne.**
+
+L’utilisation concrète de l’IA dans le jeu reste volontairement ouverte : **je déciderai de son niveau et de son utilisation pendant l’exploitation du jeu.**
+
+### Méthode de développement
+
+Nous avons décidé de construire RÉSONANCE **réellement, par blocs**, et non de continuer indéfiniment à produire de la documentation.
+
+Principe :
+
+**Conversation = décisions et pilotage**
+**Fichiers = projet persistant**
+
+Méthode :
+
+1. créer le socle réel du projet ;
+2. construire un bloc fonctionnel ;
+3. tester ce bloc ;
+4. valider ;
+5. passer au bloc suivant ;
+6. conserver un état de référence permanent.
+
+Ne prends pas de décision conceptuelle importante à ma place lorsque les documents laissent volontairement le choix ouvert.
+
+### Ce que je veux maintenant
+
+Considère que la phase de conception générale est terminée.
+
+**Ne me propose pas de refaire les cahiers des charges.**
+
+Nous devons maintenant passer à la **construction réelle de RÉSONANCE**, bloc par bloc, en respectant les documents existants.
+
+Avant toute modification importante :
+
+* vérifie la cohérence avec les 7 documents ;
+* signale une contradiction éventuelle ;
+* ne change pas une règle du jeu sans me le demander ;
+* ne mélange aucune règle provenant de SPIRMA.
+
+Nous reprenons donc exactement là où nous en étions : **le dossier de conception est établi et nous sommes prêts à construire RÉSONANCE.**

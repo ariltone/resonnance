@@ -1,0 +1,20 @@
+{
+  "version": "bloc5-1.0",
+  "tirage": {
+    "nombre_images": 6,
+    "fantomes": 1,
+    "hasard": 100,
+    "diversite_minimale": 3
+  },
+  "consignes": [
+    { "type": "attraction", "texte": "Laquelle t'attire ?" },
+    { "type": "repulsion", "texte": "Laquelle as-tu envie d'écarter ?" },
+    { "type": "intrigue", "texte": "Laquelle t'intrigue, sans savoir pourquoi ?" }
+  ],
+  "questions_expression": [
+    "Qu'est-ce que tu vois ?",
+    "Qu'est-ce que tu ressens ?",
+    "Si cette image racontait quelque chose de toi, qu'est-ce qu'elle raconterait ?"
+  ],
+  "rappel_souverainete": "Tu donnes du sens a ce que tu choisis. L'application ne donne pas de sens a ta place. Silence autorise."
+}
