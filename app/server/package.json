@@ -10,8 +10,18 @@
     "test:bloc3del": "node tests/bloc3-delete.test.js",
     "test:bloc4": "node tests/bloc4.test.js",
     "test:bloc5": "node tests/bloc5.test.js",
+    "test:bloc61": "node tests/bloc6-1.test.js",
+    "test:bloc62": "node tests/bloc6-2.test.js",
+    "test:moteur": "node tests/moteur-tirage.test.js",
+    "test:bloc63": "node tests/bloc6-3.test.js",
+    "test:bloc64": "node tests/bloc6-4.test.js",
+    "test:bloc65": "node tests/bloc6-5.test.js",
+    "test:bloc66": "node tests/bloc6-6.test.js",
+    "test:bloc67": "node tests/bloc6-7.test.js",
+    "test:bloc68": "node tests/bloc6-8.test.js",
+    "test:integration6x": "node tests/integration-6x.test.js",
     "test:e2e": "node tests/bloc4-e2e.test.js",
-    "test": "node tests/bloc3.test.js && node tests/bloc3-delete.test.js && node tests/bloc4.test.js && node tests/bloc5.test.js"
+    "test": "node tests/bloc3.test.js && node tests/bloc3-delete.test.js && node tests/bloc4.test.js && node tests/bloc5.test.js && node tests/bloc6-1.test.js && node tests/bloc6-2.test.js && node tests/moteur-tirage.test.js && node tests/bloc6-3.test.js && node tests/bloc6-4.test.js && node tests/bloc6-5.test.js && node tests/bloc6-6.test.js && node tests/bloc6-7.test.js && node tests/bloc6-8.test.js && node tests/integration-6x.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

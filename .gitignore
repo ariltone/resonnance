@@ -9,6 +9,10 @@ app/client/node_modules/
 *.sqlite-shm
 *.sqlite-wal
 
+# Base SQLite locale de développement (schéma recréé automatiquement au démarrage,
+# contient des données personnelles de test/jeu — jamais versionnée)
+app/server/data/*.db
+
 # Fichiers lock LibreOffice / temporaires
 .~lock*
 .~*

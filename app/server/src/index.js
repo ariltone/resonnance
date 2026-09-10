@@ -6,6 +6,11 @@ import path from 'node:path';
 import multer from 'multer';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { composerTirage } from './moteur-tirage.js'; // Bloc 6.3 : sélection déléguée au moteur
+import { calculerSignaux } from './signaux.js'; // Bloc 6.4 : signaux comportementaux (lecture seule)
+import { analyserRecurrences } from './recurrences.js'; // Bloc 6.5 : récurrences observées (sans effet)
+import { etatProgression } from './progression.js'; // Bloc 6.6 : avancement, jamais un score
+import { niveauIACourant } from './garde-fous-ia.js'; // Bloc 6.8 : IA hors socle (contrôle seul)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -93,7 +98,7 @@ function partieAccess(req, res, id) {
 function partieState(p) {
   const nb = db.prepare('SELECT COUNT(*) v FROM reponses WHERE partie_id=?').get(p.id).v;
   const cur = p.situation_courante_id ? situationPayload(p.situation_courante_id) : null;
-  return { id: p.id, statut: p.statut, espace_courant: cur?.espace ?? null, progression: { reponses: nb }, terminee: p.statut === 'terminee', situation: p.statut === 'terminee' ? null : cur };
+  return { id: p.id, statut: p.statut, config_editoriale_id: p.config_editoriale_id ?? null, espace_courant: cur?.espace ?? null, progression: { reponses: nb }, terminee: p.statut === 'terminee', situation: p.statut === 'terminee' ? null : cur };
 }
 const SESSION_DAYS = 365;
 function hashPassword(pw) {
@@ -444,15 +449,37 @@ app.post('/api/session/new', (req, res) => {
     ghosts = candidates.slice(0, NB_FANT).map(r => byId.get(r.image_id)).filter(Boolean);
   } catch {}
   const ghostIds = new Set(ghosts.map(g => g.id));
-  const rest = allImg.filter(i => !ghostIds.has(i.id)).sort(() => Math.random() - 0.5);
-  const pickedNew = rest.slice(0, Math.max(0, N - ghosts.length));
+  // Bloc 6.3 : le moteur compose le complément (fantômes imposés = histoire préservée, route inchangée).
+  const stimInt = new Map();
+  try {
+    for (const r of db.prepare('SELECT image_id, intensite FROM stimuli WHERE image_id IS NOT NULL').all()) {
+      if (r.intensite != null) stimInt.set(r.image_id, r.intensite);
+    }
+  } catch {}
+  const candidats = allImg
+    .filter(i => !ghostIds.has(i.id))
+    .map(i => ({ id: i.id, categorie: i.category_id ?? null, intensite: i.intensite ?? (stimInt.has(i.id) ? stimInt.get(i.id) : null), actif: (i.status ?? 'active') === 'active' }));
+  let recents = [];
+  try {
+    const lastSeq = db.prepare('SELECT id FROM sequences ORDER BY id DESC LIMIT 1').get();
+    if (lastSeq) recents = db.prepare('SELECT image_id FROM sequence_images WHERE seq_id=?').all(lastSeq.id).map(r => r.image_id);
+  } catch {}
+  const { choix: choixMoteur } = composerTirage({ candidats, nombre: Math.max(0, N - ghosts.length), recents, config: configMoteurParams(), contexte: { texte: { id: text.id, family: text.family } }, random: Math.random });
+  const parId = new Map(allImg.map(i => [i.id, i]));
+  const pickedNew = choixMoteur.map(c => parId.get(c.id)).filter(Boolean);
   const picked = [...ghosts.map(g => ({ ...g, fantome: true })), ...pickedNew.map(p => ({ ...p, fantome: false }))].sort(() => Math.random() - 0.5);
   const now = new Date().toISOString();
   const me = authOptional(req); // séquence authentifiée -> appartient à son utilisateur, sinon anonyme
-  const r = db.prepare('INSERT INTO sequences(created_at, availability, question, text_id, consigne, consigne_type, config_version, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(now, availability, question, text.id, consigne.texte, consigne.type, cfg.version, me ? me.id : null);
+  const r = db.prepare('INSERT INTO sequences(created_at, availability, question, text_id, consigne, consigne_type, config_version, config_editoriale_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(now, availability, question, text.id, consigne.texte, consigne.type, cfg.version, configEditorialeCourante(), me ? me.id : null);
   const seqId = Number(r.lastInsertRowid);
   const ins = db.prepare('INSERT INTO sequence_images(seq_id, image_id, position, is_ghost) VALUES (?, ?, ?, ?)');
   picked.forEach((img, i) => ins.run(seqId, img.id, i, img.fantome ? 1 : 0));
+  // Bloc 6.2 : chaque image présentée = un événement (revisite distinguée, jamais déduite).
+  picked.forEach((img, i) => {
+    try {
+      journaliser({ sequence_id: seqId, type: 'presente', image_id: img.id, stimulus_id: stimulusDeImage(img.id), position: i, details: { fantome: img.fantome ? 1 : 0, deja_vue: dejaVue(img.id, seqId) ? 1 : 0 }, config_version: cfg.version, config_editoriale_id: configEditorialeCourante() });
+    } catch {}
+  });
   res.json({
     sequence: { id: seqId, created_at: now, availability, question, config_version: cfg.version },
     text, consigne: consigne.texte, consigne_type: consigne.type,
@@ -466,9 +493,18 @@ app.post('/api/session/:id/choix', (req, res) => {
   if (!imageId) return res.status(400).json({ error: 'imageId requis' });
   if (!checkOwnership(req, res, seqId)) return;
   // Compat Bloc 1 : choix unique intuitif, modifiable (préserve les rejetées)
+  const precedent = db.prepare("SELECT image_id FROM sequence_images WHERE seq_id=? AND status='choisie'").get(seqId);
   db.prepare("UPDATE sequence_images SET status='vue' WHERE seq_id=? AND status='choisie'").run(seqId);
   const r = db.prepare("UPDATE sequence_images SET status='choisie' WHERE seq_id=? AND image_id=?").run(seqId, imageId);
   if (r.changes === 0) return res.status(404).json({ error: 'image hors tirage' });
+  // Bloc 6.2 : le retrait est un événement, pas un effacement (non-réécriture du passé).
+  try {
+    const seq = db.prepare('SELECT config_version, config_editoriale_id FROM sequences WHERE id=?').get(seqId);
+    if (precedent && precedent.image_id !== Number(imageId)) {
+      journaliser({ sequence_id: seqId, type: 'choix_retire', image_id: precedent.image_id, stimulus_id: stimulusDeImage(precedent.image_id), details: { via: 'choix' }, config_version: seq?.config_version ?? null, config_editoriale_id: seq?.config_editoriale_id ?? null });
+    }
+    journaliser({ sequence_id: seqId, type: 'choisie', image_id: Number(imageId), stimulus_id: stimulusDeImage(Number(imageId)), details: { via: 'choix' }, config_version: seq?.config_version ?? null, config_editoriale_id: seq?.config_editoriale_id ?? null });
+  } catch {}
   res.json({ ok: true, seqId, imageId });
 });
 
@@ -484,6 +520,10 @@ app.post('/api/session/:id/statut', (req, res) => {
   }
   const r = db.prepare('UPDATE sequence_images SET status=? WHERE seq_id=? AND image_id=?').run(status, seqId, imageId);
   if (r.changes === 0) return res.status(404).json({ error: 'image hors tirage' });
+  try {
+    const seq = db.prepare('SELECT config_version, config_editoriale_id FROM sequences WHERE id=?').get(seqId);
+    journaliser({ sequence_id: seqId, type: status, image_id: Number(imageId), stimulus_id: stimulusDeImage(Number(imageId)), details: { via: 'statut' }, config_version: seq?.config_version ?? null, config_editoriale_id: seq?.config_editoriale_id ?? null });
+  } catch {}
   res.json({ ok: true });
 });
 
@@ -495,6 +535,11 @@ app.post('/api/session/:id/expression', (req, res) => {
   db.prepare(`INSERT INTO expressions(seq_id, image_id, voir, ressentir, evoque, silence)
     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(seq_id, image_id) DO UPDATE SET voir=excluded.voir, ressentir=excluded.ressentir, evoque=excluded.evoque, silence=excluded.silence`)
     .run(seqId, imageId, voir, ressentir, evoque, silence ? 1 : 0);
+  // Bloc 6.2 : l'expression est un événement factuel (le texte reste dans expressions, pas dans le journal).
+  try {
+    const seq = db.prepare('SELECT config_version, config_editoriale_id FROM sequences WHERE id=?').get(seqId);
+    journaliser({ sequence_id: seqId, type: 'expression', image_id: Number(imageId), stimulus_id: stimulusDeImage(Number(imageId)), details: { silence: silence ? 1 : 0 }, config_version: seq?.config_version ?? null, config_editoriale_id: seq?.config_editoriale_id ?? null });
+  } catch {}
   res.json({ ok: true });
 });
 
@@ -509,7 +554,7 @@ app.post('/api/parties', (req, res) => {
   const order = parcoursOrder(parcours.id);
   if (!order.length) return res.status(400).json({ error: 'Parcours vide.' });
   const now = new Date().toISOString();
-  const r = db.prepare("INSERT INTO parties(user_id, parcours_id, statut, situation_courante_id, created_at, updated_at) VALUES (?, ?, 'en_cours', ?, ?, ?)").run(me ? me.id : null, parcours.id, order[0].situation_id, now, now);
+  const r = db.prepare("INSERT INTO parties(user_id, parcours_id, statut, situation_courante_id, config_editoriale_id, created_at, updated_at) VALUES (?, ?, 'en_cours', ?, ?, ?, ?)").run(me ? me.id : null, parcours.id, order[0].situation_id, configEditorialeCourante(), now, now);
   res.json({ ok: true, partie: partieState(db.prepare('SELECT * FROM parties WHERE id=?').get(Number(r.lastInsertRowid))) });
 });
 app.get('/api/parties', (req, res) => {
@@ -532,6 +577,10 @@ app.post('/api/parties/:id/choisir', (req, res) => {
   const pos = db.prepare('SELECT COUNT(*) v FROM reponses WHERE partie_id=?').get(p.id).v + 1;
   const now = new Date().toISOString();
   db.prepare('INSERT INTO reponses(partie_id, position, espace_id, situation_id, choix_id, situation_titre, situation_texte, choix_texte, fragment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(p.id, pos, cur.espace_id, cur.id, c.id, cur.titre, cur.texte, c.texte, c.fragment || '', now);
+  // Bloc 6.2 : la réponse est aussi un événement, avec snapshot (la partie reste intelligible si le contenu évolue).
+  try {
+    journaliser({ partie_id: p.id, type: 'reponse', position: pos, details: { espace: cur.espace, situation_titre: cur.titre, situation_texte: cur.texte, choix_texte: c.texte, fragment: c.fragment || '' }, config_editoriale_id: p.config_editoriale_id ?? null });
+  } catch {}
   const order = parcoursOrder(p.parcours_id).map(o => o.situation_id);
   const next = order[order.indexOf(cur.id) + 1] ?? null;
   db.prepare('UPDATE parties SET situation_courante_id=?, statut=?, updated_at=? WHERE id=?').run(next, next ? 'en_cours' : 'terminee', now, p.id);
@@ -617,11 +666,13 @@ function effacerDonneesUtilisateur(userId) {
   for (const id of pseqs) {
     db.prepare('DELETE FROM expressions WHERE seq_id=?').run(id);
     db.prepare('DELETE FROM sequence_images WHERE seq_id=?').run(id);
+    db.prepare('DELETE FROM evenements WHERE sequence_id=?').run(id); // Bloc 6.2 : le journal suit les séquences
     db.prepare('DELETE FROM sequences WHERE id=?').run(id);
   }
   const parts = db.prepare('SELECT id FROM parties WHERE user_id=?').all(userId).map(r => r.id);
   for (const id of parts) {
     db.prepare('DELETE FROM reponses WHERE partie_id=?').run(id);
+    db.prepare('DELETE FROM evenements WHERE partie_id=?').run(id); // Bloc 6.2 : le journal suit les parties
     db.prepare('DELETE FROM parties WHERE id=?').run(id);
   }
   return { sequences: pseqs.length, parties: parts.length };
@@ -639,6 +690,403 @@ app.delete('/api/me', (req, res) => {
   db.prepare('DELETE FROM tokens WHERE user_id=?').run(u.id); // toutes sessions invalidées
   db.prepare('DELETE FROM users WHERE id=?').run(u.id);
   res.json({ ok: true });
+});
+
+// --- Bloc 6.1 : modèle éditorial (matière structurée pour le futur moteur ; aucune logique de sélection ici) ---
+// Conventions reprises : statuts 'active'/'archived', référentiel insensible à la casse (norm),
+// erreurs nommées -> 400, migrations additives compatibles Bloc 5 (try/catch ALTER, NULL par défaut).
+// Vocabulaire volontairement non psychologique : intensité = dosage éditorial, jamais un score du joueur.
+db.exec(`
+CREATE TABLE IF NOT EXISTS phases(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE COLLATE NOCASE, status TEXT DEFAULT 'active');
+CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, formulation TEXT, intensite INTEGER NULL CHECK (intensite IS NULL OR (intensite >= 1 AND intensite <= 3)), variante_de INTEGER NULL REFERENCES questions(id), statut TEXT DEFAULT 'active', ordre INTEGER DEFAULT 0, version INTEGER DEFAULT 1, created_at TEXT);
+CREATE TABLE IF NOT EXISTS stimuli(id INTEGER PRIMARY KEY AUTOINCREMENT, cle TEXT UNIQUE, type TEXT, image_id INTEGER NULL, texte_id INTEGER NULL REFERENCES texts(id), question_id INTEGER NULL REFERENCES questions(id), intensite INTEGER NULL CHECK (intensite IS NULL OR (intensite >= 1 AND intensite <= 3)), variante_de INTEGER NULL REFERENCES stimuli(id), statut TEXT DEFAULT 'active', version INTEGER DEFAULT 1, created_at TEXT, CHECK ((image_id IS NOT NULL) + (texte_id IS NOT NULL) + (question_id IS NOT NULL) = 1));
+CREATE TABLE IF NOT EXISTS stimulus_phases(stimulus_id INTEGER, phase_id INTEGER, PRIMARY KEY(stimulus_id, phase_id));
+CREATE TABLE IF NOT EXISTS configs_editoriales(id INTEGER PRIMARY KEY AUTOINCREMENT, nom TEXT, version INTEGER DEFAULT 1, parametres TEXT DEFAULT '{}', statut TEXT DEFAULT 'active', created_at TEXT, UNIQUE(nom, version));
+`);
+for (const sql of [
+  `ALTER TABLE texts ADD COLUMN statut TEXT DEFAULT 'active'`,
+  `ALTER TABLE texts ADD COLUMN intensite INTEGER NULL`,
+  `ALTER TABLE texts ADD COLUMN version INTEGER DEFAULT 1`,
+  `ALTER TABLE texts ADD COLUMN variante_de INTEGER NULL`,
+  `ALTER TABLE images ADD COLUMN intensite INTEGER NULL`,
+  `ALTER TABLE sequences ADD COLUMN config_editoriale_id INTEGER NULL`,
+  `ALTER TABLE parties ADD COLUMN config_editoriale_id INTEGER NULL`,
+]) { try { db.exec(sql); } catch {} }
+// Phases = moments éditoriaux neutres, extensibles comme categories/tags (jamais de sens imposé au joueur).
+for (const p of ['accueil', 'exploration', 'expression', 'cloture']) {
+  try { db.prepare('INSERT INTO phases(name) VALUES (?)').run(p); } catch {}
+}
+// Config par défaut : miroir des réglages config.json, versionnée en base pour traçabilité future.
+if (!db.prepare('SELECT id FROM configs_editoriales WHERE nom=? AND version=1').get('defaut')) {
+  const cfg0 = loadConfig();
+  db.prepare('INSERT INTO configs_editoriales(nom, version, parametres, created_at) VALUES (?, 1, ?, ?)').run('defaut', JSON.stringify({ nombre_stimuli: cfg0.tirage?.nombre_images ?? 6, fantomes: cfg0.tirage?.fantomes ?? 1, hasard: cfg0.tirage?.hasard ?? 100, diversite_minimale: cfg0.tirage?.diversite_minimale ?? 3 }), new Date().toISOString());
+}
+const TYPES_STIMULI = ['image', 'texte', 'question']; // extensible : ajouter un type ici, sans toucher au schéma
+function asStatut(v, cur = 'active') {
+  if (v === undefined) return cur;
+  if (v === 'active' || v === 'archived') return v;
+  throw new Error('STATUT_INVALIDE');
+}
+function asIntensite(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (![1, 2, 3].includes(n)) throw new Error('INTENSITE_INVALIDE');
+  return n;
+}
+function resolvePhase(id, currentId = null) {
+  if (id == null || id === '') return currentId;
+  const p = activeById('phases', Number(id));
+  if (!p) throw new Error('PHASE_INCONNUE');
+  if (p.status !== 'active' && p.id !== currentId) throw new Error('PHASE_DESACTIVEE');
+  return p.id;
+}
+function resolvePhaseIds(ids) {
+  if (ids === undefined) return null;
+  const arr = Array.isArray(ids) ? ids : JSON.parse(ids);
+  return [...new Set(arr.map((id) => resolvePhase(id)))];
+}
+function contenuStimulus(s) {
+  if (s.image_id) { const r = db.prepare('SELECT * FROM images WHERE id=?').get(s.image_id); return r ? { kind: 'image', ...withUrl(r) } : null; }
+  if (s.texte_id) { const r = db.prepare('SELECT * FROM texts WHERE id=?').get(s.texte_id); return r ? { kind: 'texte', ...r } : null; }
+  if (s.question_id) { const r = db.prepare('SELECT * FROM questions WHERE id=?').get(s.question_id); return r ? { kind: 'question', ...r } : null; }
+  return null;
+}
+function phasesStimulus(id) {
+  return db.prepare('SELECT p.id, p.name, p.status FROM stimulus_phases sp JOIN phases p ON p.id=sp.phase_id WHERE sp.stimulus_id=? ORDER BY p.name').all(id);
+}
+function stimulusPayload(s) {
+  return { id: s.id, cle: s.cle, type: s.type, statut: s.statut, intensite: s.intensite, version: s.version, variante_de: s.variante_de, contenu: contenuStimulus(s), phases: phasesStimulus(s.id) };
+}
+function stimulusDisponible(s) {
+  // Disponible = enveloppe active + contenu actif + aucune phase liée archivée. Sans phase = compatible partout.
+  if (s.statut !== 'active') return false;
+  const c = contenuStimulus(s);
+  if (!c) return false;
+  if (c.kind === 'image' && (c.status ?? 'active') !== 'active') return false;
+  if (c.kind === 'texte' && (c.statut ?? 'active') !== 'active') return false;
+  if (c.kind === 'question' && c.statut !== 'active') return false;
+  if (phasesStimulus(s.id).some((p) => p.status !== 'active')) return false;
+  return true;
+}
+const EDITO_ERR = { STATUT_INVALIDE: 'Statut invalide (active|archived).', INTENSITE_INVALIDE: 'Intensité invalide (1, 2, 3 ou vide).', PHASE_INCONNUE: 'Phase inconnue.', PHASE_DESACTIVEE: 'Phase désactivée.', REFERENCE_INCONNUE: 'Contenu référencé inconnu.', TYPE_INCONNU: 'Type inconnu (image|texte|question).', VARIANTE_INCOHERENTE: 'Variante incohérente (inexistante ou de type différent).' };
+// Phases : référentiel administrable, même esprit que categories/tags.
+app.get('/api/admin/phases', (req, res) => {
+  res.json(db.prepare('SELECT * FROM phases ORDER BY name').all().map((r) => ({ ...r, stimuli: db.prepare('SELECT COUNT(*) v FROM stimulus_phases WHERE phase_id=?').get(r.id).v })));
+});
+app.post('/api/admin/phases', (req, res) => {
+  const name = norm(req.body?.name);
+  if (!name) return res.status(400).json({ error: 'Nom requis.' });
+  try {
+    const r = db.prepare('INSERT INTO phases(name) VALUES (?)').run(name);
+    res.json({ ok: true, id: Number(r.lastInsertRowid) });
+  } catch { res.status(400).json({ error: 'Doublon refuse (insensible a la casse).' }); }
+});
+app.patch('/api/admin/phases/:id', (req, res) => {
+  const rid = Number(req.params.id);
+  if (!db.prepare('SELECT id FROM phases WHERE id=?').get(rid)) return res.status(404).json({ error: 'Phase inconnue.' });
+  try {
+    if (req.body.name !== undefined) {
+      const name = norm(req.body.name);
+      if (!name) return res.status(400).json({ error: 'Nom requis.' });
+      db.prepare('UPDATE phases SET name=? WHERE id=?').run(name, rid);
+    }
+    if (req.body.status !== undefined) {
+      db.prepare('UPDATE phases SET status=? WHERE id=?').run(req.body.status === 'archived' ? 'archived' : 'active', rid);
+    }
+    res.json({ ok: true });
+  } catch { res.status(400).json({ error: 'Doublon refuse.' }); }
+});
+// Questions : caractérisation éditoriale, types extensibles (texte libre non vide).
+app.get('/api/admin/questions', (req, res) => {
+  res.json(db.prepare('SELECT * FROM questions ORDER BY ordre, id').all());
+});
+app.post('/api/admin/questions', (req, res) => {
+  try {
+    const type = norm(req.body?.type);
+    const formulation = String(req.body?.formulation ?? '').trim();
+    if (!type) return res.status(400).json({ error: 'Type requis.' });
+    if (!formulation) return res.status(400).json({ error: 'Formulation requise.' });
+    const intensite = asIntensite(req.body?.intensite);
+    const ordre = req.body?.ordre === undefined ? 0 : Number(req.body.ordre) || 0;
+    let variante = null;
+    if (req.body?.variante_de != null && req.body.variante_de !== '') {
+      variante = db.prepare('SELECT id FROM questions WHERE id=?').get(Number(req.body.variante_de));
+      if (!variante) return res.status(400).json({ error: EDITO_ERR.VARIANTE_INCOHERENTE });
+      variante = variante.id;
+    }
+    const r = db.prepare('INSERT INTO questions(type, formulation, intensite, variante_de, statut, ordre, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(type, formulation.slice(0, 2000), intensite, variante, asStatut(req.body?.statut), ordre, new Date().toISOString());
+    res.json({ ok: true, id: Number(r.lastInsertRowid) });
+  } catch (e) { res.status(400).json({ error: EDITO_ERR[e.message] ?? 'Question impossible.' }); }
+});
+app.patch('/api/admin/questions/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const cur = db.prepare('SELECT * FROM questions WHERE id=?').get(id);
+  if (!cur) return res.status(404).json({ error: 'Question inconnue.' });
+  try {
+    const formulation = req.body.formulation === undefined ? cur.formulation : String(req.body.formulation).trim();
+    if (!formulation) return res.status(400).json({ error: 'Formulation requise.' });
+    let variante = cur.variante_de;
+    if (req.body.variante_de !== undefined) {
+      if (req.body.variante_de == null || req.body.variante_de === '') variante = null;
+      else {
+        const b = db.prepare('SELECT id FROM questions WHERE id=?').get(Number(req.body.variante_de));
+        if (!b || b.id === id) return res.status(400).json({ error: EDITO_ERR.VARIANTE_INCOHERENTE });
+        variante = b.id;
+      }
+    }
+    db.prepare('UPDATE questions SET type=?, formulation=?, intensite=?, variante_de=?, statut=?, ordre=?, version=version+1 WHERE id=?')
+      .run(norm(req.body.type ?? cur.type) || cur.type, formulation.slice(0, 2000), req.body.intensite === undefined ? cur.intensite : asIntensite(req.body.intensite), variante, asStatut(req.body.statut, cur.statut), req.body.ordre === undefined ? cur.ordre : Number(req.body.ordre) || 0, id);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: EDITO_ERR[e.message] ?? 'Modification impossible.' }); }
+});
+// Stimuli : enveloppe éditoriale stable (cle) autour d'un contenu existant. Type/référence immuables.
+function lireReferenceStimulus(body) {
+  const refs = [['image', body?.image_id, 'images'], ['texte', body?.texte_id, 'texts'], ['question', body?.question_id, 'questions']].filter(([, v]) => v != null && v !== '');
+  if (refs.length !== 1) throw new Error('REFERENCE_INCONNUE');
+  const [kind, val, table] = refs[0];
+  const row = db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(Number(val));
+  if (!row) throw new Error('REFERENCE_INCONNUE');
+  return { kind, id: row.id };
+}
+app.get('/api/admin/stimuli', (req, res) => {
+  res.json(db.prepare('SELECT * FROM stimuli ORDER BY id').all().map(stimulusPayload));
+});
+app.post('/api/admin/stimuli', (req, res) => {
+  try {
+    const type = norm(req.body?.type);
+    if (!TYPES_STIMULI.includes(type)) return res.status(400).json({ error: EDITO_ERR.TYPE_INCONNU });
+    const ref = lireReferenceStimulus(req.body);
+    if (ref.kind !== type) return res.status(400).json({ error: EDITO_ERR.REFERENCE_INCONNUE });
+    const intensite = asIntensite(req.body?.intensite);
+    const phaseIds = resolvePhaseIds(req.body?.phase_ids ?? []);
+    let variante = null;
+    if (req.body?.variante_de != null && req.body.variante_de !== '') {
+      const b = db.prepare('SELECT * FROM stimuli WHERE id=?').get(Number(req.body.variante_de));
+      if (!b || b.type !== type) return res.status(400).json({ error: EDITO_ERR.VARIANTE_INCOHERENTE });
+      variante = b.id;
+    }
+    const col = ref.kind === 'image' ? 'image_id' : ref.kind === 'texte' ? 'texte_id' : 'question_id';
+    const nul = { image_id: null, texte_id: null, question_id: null, [col]: ref.id };
+    const r = db.prepare('INSERT INTO stimuli(cle, type, image_id, texte_id, question_id, intensite, variante_de, statut, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(`${type}-${ref.id}`, type, nul.image_id, nul.texte_id, nul.question_id, intensite, variante, asStatut(req.body?.statut), new Date().toISOString());
+    const id = Number(r.lastInsertRowid);
+    for (const p of phaseIds) db.prepare('INSERT INTO stimulus_phases(stimulus_id, phase_id) VALUES (?, ?)').run(id, p);
+    res.json({ ok: true, id });
+  } catch (e) {
+    if (e.message?.includes('UNIQUE')) return res.status(400).json({ error: 'Contenu déjà enveloppé (un stimulus par contenu).' });
+    res.status(400).json({ error: EDITO_ERR[e.message] ?? 'Stimulus impossible.' });
+  }
+});
+app.patch('/api/admin/stimuli/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const cur = db.prepare('SELECT * FROM stimuli WHERE id=?').get(id);
+  if (!cur) return res.status(404).json({ error: 'Stimulus inconnu.' });
+  try {
+    let variante = cur.variante_de;
+    if (req.body.variante_de !== undefined) {
+      if (req.body.variante_de == null || req.body.variante_de === '') variante = null;
+      else {
+        const b = db.prepare('SELECT * FROM stimuli WHERE id=?').get(Number(req.body.variante_de));
+        if (!b || b.id === id || b.type !== cur.type) return res.status(400).json({ error: EDITO_ERR.VARIANTE_INCOHERENTE });
+        variante = b.id;
+      }
+    }
+    db.prepare('UPDATE stimuli SET intensite=?, variante_de=?, statut=?, version=version+1 WHERE id=?')
+      .run(req.body.intensite === undefined ? cur.intensite : asIntensite(req.body.intensite), variante, asStatut(req.body.statut, cur.statut), id);
+    if (req.body.phase_ids !== undefined) {
+      const phaseIds = resolvePhaseIds(req.body.phase_ids);
+      db.prepare('DELETE FROM stimulus_phases WHERE stimulus_id=?').run(id);
+      for (const p of phaseIds) db.prepare('INSERT INTO stimulus_phases(stimulus_id, phase_id) VALUES (?, ?)').run(id, p);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: EDITO_ERR[e.message] ?? 'Modification impossible.' }); }
+});
+// Configs éditoriales : stockage versionné (UNIQUE nom+version), versions immuables (PATCH = statut seul).
+app.get('/api/admin/configs', (req, res) => {
+  res.json(db.prepare('SELECT * FROM configs_editoriales ORDER BY nom, version').all().map((r) => ({ ...r, parametres: JSON.parse(r.parametres || '{}') })));
+});
+app.post('/api/admin/configs', (req, res) => {
+  const nom = norm(req.body?.nom);
+  if (!nom) return res.status(400).json({ error: 'Nom requis.' });
+  const params = req.body?.parametres;
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return res.status(400).json({ error: 'Parametres requis (objet JSON).' });
+  try {
+    const version = req.body?.version === undefined || req.body.version === null || req.body.version === ''
+      ? (db.prepare('SELECT COALESCE(MAX(version), 0) v FROM configs_editoriales WHERE nom=?').get(nom).v + 1)
+      : Number(req.body.version);
+    if (!Number.isInteger(version) || version < 1) return res.status(400).json({ error: 'Version invalide.' });
+    const r = db.prepare('INSERT INTO configs_editoriales(nom, version, parametres, statut, created_at) VALUES (?, ?, ?, ?, ?)').run(nom, version, JSON.stringify(params), asStatut(req.body?.statut), new Date().toISOString());
+    res.json({ ok: true, id: Number(r.lastInsertRowid), version });
+  } catch (e) {
+    if (e.message?.includes('UNIQUE')) return res.status(400).json({ error: 'Version déjà existante pour ce nom.' });
+    res.status(400).json({ error: EDITO_ERR[e.message] ?? 'Config impossible.' });
+  }
+});
+app.patch('/api/admin/configs/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT id FROM configs_editoriales WHERE id=?').get(id)) return res.status(404).json({ error: 'Config inconnue.' });
+  try {
+    db.prepare('UPDATE configs_editoriales SET statut=? WHERE id=?').run(asStatut(req.body?.statut), id);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: EDITO_ERR[e.message] ?? 'Modification impossible.' }); }
+});
+// Lecture publique : matière disponible pour le futur moteur (actifs uniquement, jamais d'inactif).
+app.get('/api/editorial/disponibles', (req, res) => {
+  const type = req.query.type ? norm(req.query.type) : null;
+  const phase = req.query.phase ? norm(req.query.phase) : null;
+  let rows = db.prepare('SELECT * FROM stimuli ORDER BY id').all().filter(stimulusDisponible);
+  if (type) rows = rows.filter((s) => s.type === type);
+  if (phase) rows = rows.filter((s) => phasesStimulus(s.id).some((p) => p.name === phase && p.status === 'active'));
+  res.json(rows.map(stimulusPayload));
+});
+
+// --- Bloc 6.3 : paramètres moteur (config « defaut » active max ; clés inconnues ignorées, extensible) ---
+function configMoteurParams() {
+  try {
+    const r = db.prepare("SELECT parametres FROM configs_editoriales WHERE nom='defaut' AND statut='active' ORDER BY version DESC LIMIT 1").get();
+    if (!r) return {};
+    const p = JSON.parse(r.parametres || '{}');
+    return (p && typeof p === 'object' && !Array.isArray(p)) ? p : {};
+  } catch { return {}; }
+}
+// --- Bloc 6.2 : historique & mémoire (faits Niveau 1 uniquement, jamais d'interprétation) ---
+// Journal append-only : on ajoute des événements, on ne réécrit jamais le passé.
+// Les statuts « ignoré / choisi ultérieurement » se dérivent plus tard (présenté sans suite,
+// choisie après une présentation antérieure) : le futur moteur les calculera, pas ce bloc.
+db.exec(`
+CREATE TABLE IF NOT EXISTS evenements(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, partie_id INTEGER NULL REFERENCES parties(id), sequence_id INTEGER NULL REFERENCES sequences(id), type TEXT, image_id INTEGER NULL, stimulus_id INTEGER NULL REFERENCES stimuli(id), position INTEGER NULL, details TEXT DEFAULT '{}', config_version TEXT NULL, config_editoriale_id INTEGER NULL);
+`);
+const TYPES_EVENEMENTS = ['presente', 'vue', 'choisie', 'choix_retire', 'rejetee', 'expression', 'reponse']; // extensible : ajouter un type ici
+function configEditorialeCourante() {
+  // Snapshot discret : la config « defaut » active la plus récente, ou NULL si aucune.
+  try {
+    const r = db.prepare("SELECT id FROM configs_editoriales WHERE nom='defaut' AND statut='active' ORDER BY version DESC LIMIT 1").get();
+    return r ? r.id : null;
+  } catch { return null; }
+}
+function stimulusDeImage(imageId) {
+  try {
+    const r = db.prepare("SELECT id FROM stimuli WHERE image_id=?").get(imageId);
+    return r ? r.id : null;
+  } catch { return null; }
+}
+function dejaVue(imageId, seqId) {
+  // Rencontre antérieure dans une autre séquence (lignes historiques + événements).
+  const lig = db.prepare('SELECT COUNT(*) v FROM sequence_images WHERE image_id=? AND seq_id<>?').get(imageId, seqId).v;
+  if (lig > 0) return true;
+  return db.prepare("SELECT COUNT(*) v FROM evenements WHERE image_id=? AND type='presente' AND (sequence_id IS NULL OR sequence_id<>?)").get(imageId, seqId).v > 0;
+}
+function journaliser(evt) {
+  if (!TYPES_EVENEMENTS.includes(evt.type)) throw new Error('TYPE_EVENEMENT_INCONNU');
+  const now = new Date().toISOString();
+  const r = db.prepare('INSERT INTO evenements(created_at, partie_id, sequence_id, type, image_id, stimulus_id, position, details, config_version, config_editoriale_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(now, evt.partie_id ?? null, evt.sequence_id ?? null, evt.type, evt.image_id ?? null, evt.stimulus_id ?? null, evt.position ?? null, JSON.stringify(evt.details ?? {}), evt.config_version ?? null, evt.config_editoriale_id ?? null);
+  return Number(r.lastInsertRowid);
+}
+// Lecture : événements d'une séquence (même contrôle d'accès que le carnet).
+app.get('/api/session/:id/evenements', (req, res) => {
+  const seqId = Number(req.params.id);
+  if (!checkOwnership(req, res, seqId)) return;
+  res.json(db.prepare('SELECT * FROM evenements WHERE sequence_id=? ORDER BY id').all(seqId));
+});
+// Lecture : historique d'une partie (événements + réponses déjà snapshotées en Bloc 5).
+app.get('/api/parties/:id/historique', (req, res) => {
+  const p = partieAccess(req, res, Number(req.params.id));
+  if (!p) return;
+  res.json({
+    partie: partieState(p),
+    evenements: db.prepare('SELECT * FROM evenements WHERE partie_id=? ORDER BY id').all(p.id),
+    reponses: db.prepare('SELECT position, espace_id, situation_id, choix_id, situation_titre, situation_texte, choix_texte, fragment, created_at FROM reponses WHERE partie_id=? ORDER BY position').all(p.id)
+  });
+});
+// Lecture : rencontres d'une image (agrégats publics, même esprit que les stats /api/images ; aucune donnée joueur).
+app.get('/api/editorial/rencontres', (req, res) => {
+  const imageId = Number(req.query.image_id);
+  if (!imageId) return res.status(400).json({ error: 'image_id requis.' });
+  if (!db.prepare('SELECT id FROM images WHERE id=?').get(imageId)) return res.status(404).json({ error: 'Image inconnue.' });
+  const lignes = db.prepare('SELECT si.*, s.created_at FROM sequence_images si JOIN sequences s ON s.id=si.seq_id WHERE si.image_id=? ORDER BY s.id').all(imageId);
+  let revisites = 0;
+  try {
+    revisites = db.prepare("SELECT COUNT(*) v FROM evenements WHERE image_id=? AND type='presente' AND json_extract(details, '$.deja_vue')=1").get(imageId).v;
+  } catch {}
+  const premier = lignes.length ? lignes[0].created_at : null;
+  const dernier = lignes.length ? lignes[lignes.length - 1].created_at : null;
+  res.json({
+    image_id: imageId,
+    vues: lignes.length,
+    choix: lignes.filter((l) => l.status === 'choisie').length,
+    rejets: lignes.filter((l) => l.status === 'rejetee').length,
+    revisites,
+    premier, dernier,
+    sequences: lignes.map((l) => ({ seq_id: l.seq_id, date: l.created_at, statut: l.status, fantome: !!l.is_ghost }))
+  });
+});
+
+// --- Bloc 6.4 : signaux (lecture seule, mêmes contrôles d'accès que l'historique) ---
+app.get('/api/session/:id/signaux', (req, res) => {
+  const seqId = Number(req.params.id);
+  if (!checkOwnership(req, res, seqId)) return;
+  const seq = db.prepare('SELECT created_at FROM sequences WHERE id=?').get(seqId);
+  res.json(calculerSignaux(db.prepare('SELECT * FROM evenements WHERE sequence_id=? ORDER BY id').all(seqId), seq?.created_at ?? null));
+});
+app.get('/api/parties/:id/signaux', (req, res) => {
+  const p = partieAccess(req, res, Number(req.params.id));
+  if (!p) return;
+  res.json(calculerSignaux(db.prepare('SELECT * FROM evenements WHERE partie_id=? ORDER BY id').all(p.id), p.created_at ?? null));
+});
+
+// --- Bloc 6.5 : récurrences observées (agrégats publics, traçabilité cahier-IA §36) ---
+function seuilsRecurrenceCourants() {
+  try {
+    const p = configMoteurParams();
+    const s = p.seuils_recurrence;
+    if (s && typeof s === 'object' && !Array.isArray(s)) return s;
+  } catch {}
+  return {};
+}
+app.get('/api/editorial/recurrences', (req, res) => {
+  const lignes = db.prepare('SELECT si.image_id, si.seq_id, si.status AS statut, si.is_ghost AS fantome FROM sequence_images si').all();
+  res.json(analyserRecurrences(lignes, seuilsRecurrenceCourants()));
+});
+
+// --- Bloc 6.6 : progression (avancement = séquences traversées, règles §16) ---
+function paliersPhaseCourants() {
+  try {
+    const p = configMoteurParams();
+    if (Array.isArray(p.paliers_phase)) return p.paliers_phase;
+  } catch {}
+  return undefined; // → défauts techniques du module (à valider humainement)
+}
+app.get('/api/progression', (req, res) => {
+  const me = authOptional(req);
+  const n = me
+    ? db.prepare('SELECT COUNT(*) v FROM sequences WHERE user_id=?').get(me.id).v
+    : db.prepare('SELECT COUNT(*) v FROM sequences WHERE user_id IS NULL').get().v;
+  res.json(etatProgression(n, paliersPhaseCourants()));
+});
+
+// --- Bloc 6.7 : carnet complet (3 niveaux règles §32, sans réécrire le carnet existant) ---
+app.get('/api/carnet/complet', (req, res) => {
+  const me = authOptional(req);
+  const entrees = carnetRows(me); // existant, inchangé (ordre et contenu conservés)
+  const seqIds = new Set(entrees.map((s) => s.id));
+  const lignes = db.prepare('SELECT si.image_id, si.seq_id, si.status AS statut, si.is_ghost AS fantome FROM sequence_images si').all()
+    .filter((l) => seqIds.has(l.seq_id));
+  const recurrences = analyserRecurrences(lignes, seuilsRecurrenceCourants()).filter((o) => o.niveau !== 'ponctuel');
+  res.json({
+    entrees,
+    niveaux: {
+      faits: entrees.map((s) => ({ seq_id: s.id, created_at: s.created_at, texte: s.text_content, images: (s.images || []).map((i) => ({ id: i.id, titre: i.title, statut: i.status })) })),
+      parole_joueur: entrees.map((s) => ({ seq_id: s.id, question: s.question, availability: s.availability, expressions: s.expressions })),
+      propositions_systeme: { recurrences, note: 'Observations traçables, jamais des conclusions.' }
+    },
+    questions_ouvertes: entrees.filter((s) => s.question).map((s) => ({ seq_id: s.id, question: s.question, created_at: s.created_at }))
+  });
+});
+
+// --- Bloc 6.8 : IA hors socle (transparence ; niveau configurable cahier-IA §38 ; génération = à spécifier) ---
+app.get('/api/ia/statut', (req, res) => {
+  res.json({ socle: false, niveau: niveauIACourant(configMoteurParams()), note: 'Aucune génération dans le socle. Fonctions IA à spécifier.' });
 });
 
 const PORT = process.env.PORT || 3001;
