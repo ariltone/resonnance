@@ -431,6 +431,11 @@ app.get('/api/me', (req, res) => {
 app.post('/api/session/new', (req, res) => {
   const cfg = loadConfig();
   const { availability = '', question = '' } = req.body ?? {};
+  let traversee = req.body?.traversee ?? null; // Bloc 7 : rattachement optionnel à une traversée
+  if (traversee != null) {
+    traversee = String(traversee).slice(0, 64);
+    if (!/^[A-Za-z0-9_-]+$/.test(traversee)) return res.status(400).json({ error: 'Traversée invalide.' });
+  }
   const texts = db.prepare('SELECT * FROM texts').all();
   const text = texts[Math.floor(Math.random() * texts.length)];
   const consignes = cfg.consignes ?? [{ type: 'attraction', texte: cfg.consigne ?? "Laquelle t'attire ?" }];
@@ -438,7 +443,7 @@ app.post('/api/session/new', (req, res) => {
   const allImg = db.prepare("SELECT * FROM images WHERE COALESCE(status,'active')='active'").all();
   if (allImg.length === 0) return res.status(400).json({ error: 'photothèque vide (tout archivé)' });
   // Fantômes : images déjà vues mais jamais choisies
-  const N = cfg.tirage.nombre_images ?? 6;
+  const N = rythmeCourant().taille_tirage; // Bloc 7 : rythme configurable, repli 6
   const NB_FANT = cfg.tirage.fantomes ?? 1;
   let ghosts = [];
   try {
@@ -467,10 +472,23 @@ app.post('/api/session/new', (req, res) => {
   const { choix: choixMoteur } = composerTirage({ candidats, nombre: Math.max(0, N - ghosts.length), recents, config: configMoteurParams(), contexte: { texte: { id: text.id, family: text.family } }, random: Math.random });
   const parId = new Map(allImg.map(i => [i.id, i]));
   const pickedNew = choixMoteur.map(c => parId.get(c.id)).filter(Boolean);
+  // Bloc 7 : part de décalage — jusqu'à K images remplacées par des actives hors tirage
+  // (jamais de doublons, jamais d'inactives, récents évités). Invariants du moteur préservés.
+  try {
+    let dec = Math.max(0, rythmeCourant().decalage | 0);
+    if (dec > 0 && pickedNew.length > 0) {
+      const pris = new Set([...ghostIds, ...pickedNew.map(p => p.id)]);
+      const rechange = allImg.filter(i => !pris.has(i.id) && !recents.includes(i.id));
+      for (let k = pickedNew.length - 1; k >= 0 && dec > 0 && rechange.length; k--, dec--) {
+        const nxt = rechange.splice(Math.floor(Math.random() * rechange.length), 1)[0];
+        if (nxt) pickedNew[k] = nxt;
+      }
+    }
+  } catch {}
   const picked = [...ghosts.map(g => ({ ...g, fantome: true })), ...pickedNew.map(p => ({ ...p, fantome: false }))].sort(() => Math.random() - 0.5);
   const now = new Date().toISOString();
   const me = authOptional(req); // séquence authentifiée -> appartient à son utilisateur, sinon anonyme
-  const r = db.prepare('INSERT INTO sequences(created_at, availability, question, text_id, consigne, consigne_type, config_version, config_editoriale_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(now, availability, question, text.id, consigne.texte, consigne.type, cfg.version, configEditorialeCourante(), me ? me.id : null);
+  const r = db.prepare('INSERT INTO sequences(created_at, availability, question, text_id, consigne, consigne_type, config_version, config_editoriale_id, user_id, traversee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(now, availability, question, text.id, consigne.texte, consigne.type, cfg.version, configEditorialeCourante(), me ? me.id : null, traversee);
   const seqId = Number(r.lastInsertRowid);
   const ins = db.prepare('INSERT INTO sequence_images(seq_id, image_id, position, is_ghost) VALUES (?, ?, ?, ?)');
   picked.forEach((img, i) => ins.run(seqId, img.id, i, img.fantome ? 1 : 0));
@@ -1087,6 +1105,106 @@ app.get('/api/carnet/complet', (req, res) => {
 // --- Bloc 6.8 : IA hors socle (transparence ; niveau configurable cahier-IA §38 ; génération = à spécifier) ---
 app.get('/api/ia/statut', (req, res) => {
   res.json({ socle: false, niveau: niveauIACourant(configMoteurParams()), note: 'Aucune génération dans le socle. Fonctions IA à spécifier.' });
+});
+
+// --- Bloc 7 : traversée en 3 temps + réglages + phrases (spec docs/spec-traversee-reglages.md) ---
+// Rythme configurable via la config éditoriale « defaut » (versions immuables), replis affirmés.
+// Aucune pondération exposée ; le dosage reste éditorial, jamais un score du joueur.
+for (const sql of [
+  `ALTER TABLE sequences ADD COLUMN traversee TEXT NULL`,
+  `CREATE TABLE IF NOT EXISTS traversee_ecrits(traversee TEXT PRIMARY KEY, mot TEXT DEFAULT '', eveil TEXT DEFAULT '', enchainement TEXT DEFAULT '', silence INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)`,
+]) { try { db.exec(sql); } catch {} }
+const RYTHME_DEFAUT = { taille_tirage: 6, nombre_tours: 3, decalage: 1 };
+const FAMILLES_TEXTES = ['evocation', 'tension', 'choix', 'deplacement', 'projection'];
+function rythmeCourant() {
+  const r = { ...RYTHME_DEFAUT };
+  try {
+    const p = configMoteurParams();
+    for (const k of Object.keys(RYTHME_DEFAUT)) {
+      const n = Number(p[k]);
+      if (Number.isInteger(n) && n >= (k === 'taille_tirage' ? 1 : 0)) r[k] = n;
+    }
+  } catch {}
+  return r;
+}
+function cleTraverseeValide(cle) {
+  return typeof cle === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(cle);
+}
+function accesTraversee(req, res, cle) {
+  // Même esprit d'accès que carnet/parties : anonymes neutres, rattachées au propriétaire.
+  if (!cleTraverseeValide(cle)) { res.status(400).json({ error: 'Traversée inconnue.' }); return null; }
+  const me = authOptional(req);
+  const toutes = db.prepare('SELECT * FROM sequences WHERE traversee=? ORDER BY id').all(cle);
+  if (!toutes.length) { res.status(404).json({ error: 'Traversée inconnue.' }); return null; }
+  const visibles = toutes.filter(s => (me ? s.user_id === me.id : s.user_id == null));
+  if (!visibles.length) { res.status(403).json({ error: 'Accès interdit.' }); return null; }
+  return visibles;
+}
+app.get('/api/rythme', (req, res) => res.json(rythmeCourant()));
+app.get('/api/traversees/:cle', (req, res) => {
+  const rows = accesTraversee(req, res, req.params.cle);
+  if (!rows) return;
+  res.json({
+    traversee: req.params.cle,
+    sequences: rows.map(s => ({
+      id: s.id, created_at: s.created_at, consigne: s.consigne, consigne_type: s.consigne_type,
+      texte: s.text_id ? db.prepare('SELECT id, family, content FROM texts WHERE id=?').get(s.text_id) : null,
+      images: db.prepare('SELECT i.id, i.title, i.url, si.status, si.is_ghost FROM sequence_images si JOIN images i ON i.id=si.image_id WHERE si.seq_id=? ORDER BY si.position').all(s.id).map(withUrl),
+    })),
+  });
+});
+app.get('/api/traversees/:cle/ecrit', (req, res) => {
+  const rows = accesTraversee(req, res, req.params.cle);
+  if (!rows) return;
+  res.json(db.prepare('SELECT * FROM traversee_ecrits WHERE traversee=?').get(req.params.cle) ?? null);
+});
+app.post('/api/traversees/:cle/ecrit', (req, res) => {
+  const rows = accesTraversee(req, res, req.params.cle);
+  if (!rows) return;
+  const cle = req.params.cle;
+  const txt = (v) => String(v ?? '').slice(0, 2000);
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO traversee_ecrits(traversee, mot, eveil, enchainement, silence, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(traversee) DO UPDATE SET mot=excluded.mot, eveil=excluded.eveil, enchainement=excluded.enchainement, silence=excluded.silence, updated_at=excluded.updated_at`)
+    .run(cle, txt(req.body?.mot), txt(req.body?.eveil), txt(req.body?.enchainement), req.body?.silence ? 1 : 0, now, now);
+  res.json({ ok: true, ecrit: db.prepare('SELECT * FROM traversee_ecrits WHERE traversee=?').get(cle) });
+});
+// Phrases d'ouverture : référentiel administrable, même esprit que categories/tags.
+// Famille en liste fermée ; suppression bloquée si citée (409, archive proposée).
+app.get('/api/admin/textes', (req, res) => {
+  res.json(db.prepare('SELECT * FROM texts ORDER BY id').all().map(t => ({
+    ...t, sequences: db.prepare('SELECT COUNT(*) v FROM sequences WHERE text_id=?').get(t.id).v,
+  })));
+});
+app.post('/api/admin/textes', (req, res) => {
+  const family = String(req.body?.family ?? '').trim().toLowerCase();
+  const content = String(req.body?.content ?? '').trim();
+  if (!FAMILLES_TEXTES.includes(family)) return res.status(400).json({ error: 'Famille inconnue (evocation|tension|choix|deplacement|projection).' });
+  if (!content) return res.status(400).json({ error: 'Contenu requis.' });
+  const r = db.prepare("INSERT INTO texts(family, content, statut, version) VALUES (?, ?, 'active', 1)").run(family, content.slice(0, 2000));
+  res.json({ ok: true, id: Number(r.lastInsertRowid) });
+});
+app.patch('/api/admin/textes/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const cur = db.prepare('SELECT * FROM texts WHERE id=?').get(id);
+  if (!cur) return res.status(404).json({ error: 'Phrase inconnue.' });
+  const family = req.body.family === undefined ? cur.family : String(req.body.family).trim().toLowerCase();
+  if (!FAMILLES_TEXTES.includes(family)) return res.status(400).json({ error: 'Famille inconnue.' });
+  const content = req.body.content === undefined ? cur.content : String(req.body.content).trim();
+  if (!content) return res.status(400).json({ error: 'Contenu requis.' });
+  const statut = req.body.statut === undefined ? (cur.statut ?? 'active') : (req.body.statut === 'archived' ? 'archived' : 'active');
+  db.prepare('UPDATE texts SET family=?, content=?, statut=?, version=version+1 WHERE id=?').run(family, content.slice(0, 2000), statut, id);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/textes/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT id FROM texts WHERE id=?').get(id)) return res.status(404).json({ error: 'Phrase inconnue.' });
+  const used = db.prepare('SELECT COUNT(*) v FROM sequences WHERE text_id=?').get(id).v;
+  if (used > 0) {
+    return res.status(409).json({ error: `Phrase citée dans ${used} séquence(s) : suppression impossible sans casser l'historique. Archive-la plutôt.`, usedIn: used });
+  }
+  db.prepare('DELETE FROM texts WHERE id=?').run(id);
+  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3001;

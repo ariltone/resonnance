@@ -22,21 +22,39 @@ button { cursor:pointer; border-radius:999px; padding:10px 18px; font-size:15px;
 .err { background:#3a1414; border:1px solid #7a2a2a; padding:12px; border-radius:10px; }
 .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin:16px 0; }
 @media (max-width:700px){ .grid{grid-template-columns:repeat(2,1fr);} }
-.img { padding:0; border:2px solid transparent; border-radius:12px; overflow:hidden; background:none; }
-.img img { width:100%; height:180px; object-fit:cover; display:block; opacity:.9; transition:.2s; }
+.img { padding:0; border:2px solid transparent; border-radius:12px; overflow:hidden; background:none; position:relative; }
+.img img { width:100%; height:180px; object-fit:cover; display:block; opacity:.9; transition:opacity .2s, transform .25s ease; }
 .img:hover img{opacity:1;} .img.sel{border-color:var(--accent);} .img.sel img{opacity:1;}
+/* Survol : la photo s'agrandit par-dessus la grille, sans déplacer la mise en page */
+.grid .img:hover{overflow:visible; z-index:10;}
+.grid .img:hover img{transform:scale(1.6); box-shadow:0 8px 32px rgba(0,0,0,.6); border-radius:12px;}
 .img.rej{border-color:#7a2a2a;} .img.rej img{opacity:.35; filter:grayscale(.6);}
 .cell{display:flex; flex-direction:column; gap:6px;} .under{display:flex; gap:6px; align-items:center; min-height:22px;}
 .badge{font-size:11px; color:var(--accent); font-style:italic;} .badge.rej-b{color:#e08a8a;}
 .mini-btn{background:transparent; border:1px solid var(--line); color:var(--muted); font-size:12px; padding:4px 10px;}
 .chosen { width:100%; max-height:320px; object-fit:cover; border-radius:12px; }
+.pause-fig { margin:12px auto; max-width:720px; }
+.pause-fig img.chosen { width:auto; max-width:100%; max-height:70vh; object-fit:contain; margin:0 auto; display:block; }
+.pause-fig figcaption { text-align:center; color:var(--muted); font-size:13px; font-style:italic; margin-top:6px; }
 label { display:flex; flex-direction:column; gap:8px; text-align:left; }
 .check { flex-direction:row; align-items:center; gap:10px; }
 .check input{width:auto;}
 .carnet { display:flex; flex-direction:column; gap:14px; }
 .entry { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
 .date { color:var(--muted); font-size:13px; } .q{font-style:italic; margin:6px 0;} .t{margin:6px 0 10px;}
-.mini { display:flex; gap:8px; flex-wrap:wrap; } .mini img{width:90px; height:64px; object-fit:cover; border-radius:8px; opacity:.5;} .mini img.is-chosen{opacity:1; outline:2px solid var(--accent);} .mini img.is-rej{opacity:.3; outline:1px dashed #7a2a2a;} .thumb{display:flex; flex-direction:column; align-items:center; gap:2px;} .thumb .g{font-size:10px; color:var(--accent);}
+.mini { display:flex; gap:8px; flex-wrap:wrap; } .mini img{width:90px; height:64px; object-fit:cover; border-radius:8px; opacity:.5;} .mini img.is-chosen{opacity:1; outline:2px solid var(--accent);} .mini img.is-rej{opacity:.3; outline:1px dashed #7a2a2a;}
+/* Carnet de traversée : photos en colonne à gauche, une question à la fois à droite */
+.trav-carnet{display:grid; grid-template-columns:220px 1fr; gap:16px; align-items:start; margin-top:12px;}
+@media (max-width:700px){.trav-carnet{grid-template-columns:1fr;}}
+.trav-photos{display:flex; flex-direction:column; gap:10px;}
+.trav-photos img{width:100%; border-radius:10px; display:block;}
+.trav-photos img.is-rej{opacity:.6;}
+.trav-questions{display:flex; flex-direction:column; gap:12px;}
+/* Tactile : premier toucher = voir en grand (l'équivalent du survol) */
+.apercu-fond{position:fixed; inset:0; background:rgba(0,0,0,.88); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; z-index:100; padding:16px;}
+.apercu-fond img{max-width:92vw; max-height:82vh; object-fit:contain; border-radius:12px;}
+.apercu-fond .hint{color:#ccc;}
+.pause-cliquable{cursor:pointer;} .thumb{display:flex; flex-direction:column; align-items:center; gap:2px;} .thumb .g{font-size:10px; color:var(--accent);}
 .exp{margin-top:10px; font-size:14px; color:#ddd;}
 footer{margin-top:auto; text-align:center; color:var(--muted); font-style:italic; font-size:13px;}
 nav.row button{font-size:13px; padding:6px 14px;}

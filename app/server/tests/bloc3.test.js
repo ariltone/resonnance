@@ -14,7 +14,7 @@ const png1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlE
 async function main() {
   // 1. conservation existantes + stats
   const imgs = await (await fetch(BASE + '/api/admin/images')).json();
-  ok('conservation démo resonance-1', imgs.some(i => i.seed === 'resonance-1'));
+  ok('conservation corpus R001', imgs.some(i => i.seed === 'corpus-R001'));
   ok('stats existantes', imgs[0]?.stats && typeof imgs[0].stats.apparitions === 'number');
 
   // 2. catégories (noms uniques par run, catégorie active pour les assignations)

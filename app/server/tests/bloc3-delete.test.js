@@ -16,11 +16,23 @@ async function main() {
   const solitude = tags.find(t => t.name === 'solitude');
   const catId = cats.find(c => c.status === 'active').id;
 
-  // 1. image utilisée -> suppression bloquée 409, toujours présente, archivage proposé
-  const used = await req('DELETE', '/api/admin/images/1');
+  // 1. image utilisée -> suppression bloquée 409, toujours présente, archivage proposé.
+  // (tirage forcé : on isole la cible en archivant temporairement le reste, puis on restaure)
+  const mk = await req('POST', '/api/admin/images', { title: 'DEL used', url: 'https://picsum.photos/seed/del-used-1/600/400', category_id: catId, tag_ids: [solitude.id] });
+  ok('création image cible', mk.status === 200 && mk.body.id, JSON.stringify(mk));
+  const usedId = mk.body.id;
+  const avant = await (await fetch(BASE + '/api/admin/images')).json();
+  const actives = avant.filter(i => i.id !== usedId && i.status === 'active');
+  for (const o of actives) await req('PATCH', `/api/admin/images/${o.id}`, { status: 'archived' });
+  const s0 = await req('POST', '/api/session/new', {});
+  const cibleTiree = (s0.body.images || []).some(i => i.id === usedId);
+  for (const o of actives) await req('PATCH', `/api/admin/images/${o.id}`, { status: 'active' });
+  ok('tirage isolé sur image cible', s0.status === 200 && cibleTiree, JSON.stringify(s0.body.images || []).slice(0, 200));
+  const used = await req('DELETE', `/api/admin/images/${usedId}`);
   ok('image utilisée bloquée 409', used.status === 409 && /archiv/i.test(used.body.error || ''), JSON.stringify(used));
-  const stillThere = (await (await fetch(BASE + '/api/admin/images')).json()).some(i => i.id === 1);
+  const stillThere = (await (await fetch(BASE + '/api/admin/images')).json()).some(i => i.id === usedId);
   ok('image utilisée conservée', stillThere);
+  await req('PATCH', `/api/admin/images/${usedId}`, { status: 'archived' }); // nettoyage : utilisée donc inarchivable-supprimable, sortie du jeu
 
   // 2. suppression externe sans historique -> définitive
   const ext = await req('POST', '/api/admin/images', { title: 'DEL ext', url: 'https://picsum.photos/seed/del-ext-1/600/400', category_id: catId, tag_ids: [solitude.id] });

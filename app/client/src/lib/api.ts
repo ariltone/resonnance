@@ -30,8 +30,8 @@ export const api = {
     fetch('/api/login', { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ pseudo, password }) }).then(j).then(d => { token.set(d.token); return d; }),
   logout: () => fetch('/api/logout', { method: 'POST', headers: headers() }).then(j).finally(() => token.set('')),
   me: () => fetch('/api/me', { headers: headers() }).then(j),
-  newSession: (availability: string, question: string) =>
-    fetch('/api/session/new', { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ availability, question }) }).then(j),
+  newSession: (availability: string, question: string, traversee?: string) =>
+    fetch('/api/session/new', { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ availability, question, ...(traversee ? { traversee } : {}) }) }).then(j),
   choix: (seqId: number, imageId: number) =>
     fetch(`/api/session/${seqId}/choix`, { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ imageId }) }).then(j),
   statut: (seqId: number, imageId: number, status: 'vue' | 'choisie' | 'rejetee') =>
@@ -39,6 +39,17 @@ export const api = {
   expression: (seqId: number, payload: object) =>
     fetch(`/api/session/${seqId}/expression`, { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) }).then(j),
   carnet: () => fetch('/api/carnet', { headers: headers() }).then(j),
+  // Bloc 7 : traversée en 3 temps + rythme + phrases
+  rythme: () => fetch('/api/rythme', { headers: headers() }).then(j),
+  traverse: (cle: string) => fetch('/api/traversees/' + encodeURIComponent(cle), { headers: headers() }).then(j),
+  ecritGet: (cle: string) => fetch(`/api/traversees/${encodeURIComponent(cle)}/ecrit`, { headers: headers() }).then(j),
+  ecritPost: (cle: string, p: object) => fetch(`/api/traversees/${encodeURIComponent(cle)}/ecrit`, { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(p) }).then(j),
+  textes: () => fetch('/api/admin/textes', { headers: headers() }).then(j),
+  texteAdd: (p: object) => fetch('/api/admin/textes', { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(p) }).then(j),
+  textePatch: (id: number, p: object) => fetch(`/api/admin/textes/${id}`, { method: 'PATCH', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(p) }).then(j),
+  texteDelete: (id: number) => fetch(`/api/admin/textes/${id}`, { method: 'DELETE', headers: headers() }).then(j),
+  configs: () => fetch('/api/admin/configs', { headers: headers() }).then(j),
+  configAdd: (p: object) => fetch('/api/admin/configs', { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(p) }).then(j),
   exportUrl: (format: 'html' | 'json') => '/api/carnet/export?format=' + format,
   downloadExport: async (format: 'html' | 'json') => {
     const r = await fetch('/api/carnet/export?format=' + format, { headers: headers() });

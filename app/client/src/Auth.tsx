@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './lib/api';
+import Carnet from './Carnet';
 
 export default function Auth({ onChange }: { onChange: () => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -7,6 +8,7 @@ export default function Auth({ onChange }: { onChange: () => void }) {
   const [password, setPassword] = useState('');
   const [me, setMe] = useState<any>(null);
   const [msg, setMsg] = useState('');
+  const [voirCarnet, setVoirCarnet] = useState(false);
   const [confirm, setConfirm] = useState<'data' | 'account' | null>(null);
 
   const refresh = () => api.me().then(d => setMe(d.user)).catch(() => setMe(null));
@@ -45,10 +47,12 @@ export default function Auth({ onChange }: { onChange: () => void }) {
       <h2>Bon retour, {me.pseudo}</h2>
       <p className="hint">Ton carnet est privé : lui seul conserve ton parcours. Session longue (1 an, renouvelée à l'usage).</p>
       <div className="row" style={{ flexWrap: 'wrap' }}>
+        <button className={voirCarnet ? 'primary' : 'ghost'} onClick={() => setVoirCarnet(!voirCarnet)}>{voirCarnet ? 'Masquer le carnet' : 'Voir le carnet'}</button>
         <button className="ghost" onClick={() => api.downloadExport('html')}>Exporter HTML</button>
         <button className="ghost" onClick={() => api.downloadExport('json')}>Exporter JSON</button>
         <button className="ghost" onClick={out}>Déconnexion</button>
       </div>
+      {voirCarnet && <Carnet />}
       {msg && <p className="hint">{msg}</p>}
       <h3>Suppression</h3>
       {confirm === null && (

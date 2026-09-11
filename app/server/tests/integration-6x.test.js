@@ -4,7 +4,7 @@
 const BASE = process.env.BASE || 'http://localhost:3001';
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name} ${extra}`); } };
-const SANS_BOUCLE = (o) => !/score|diagnostic|personnalit|profil|signifi.*tu|tu es (une|un)/i.test(JSON.stringify(o));
+const SANS_BOUCLE = (o) => !/score|diagnostic|personnalit|profil|signifie|tu es (une|un)/i.test(JSON.stringify(o));
 async function req(method, p, body, token) {
   const h = { 'Content-Type': 'application/json' };
   if (token) h.Authorization = 'Bearer ' + token;
