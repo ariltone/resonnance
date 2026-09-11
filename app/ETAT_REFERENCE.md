@@ -1,118 +1,763 @@
-# ÉTAT DE RÉFÉRENCE — RÉSONANCE Bloc 5 (2026-09-09)
 
-Bloc 1 + Bloc 2 validés en jeu. Bloc 3 VALIDÉ ET FIGÉ. Bloc 4 VALIDÉ BOUT-EN-BOUT. Bloc 5 implémenté : 84 PASS + E2E 14/14 + build OK, en attente de ta validation jouable.
+# ÉTAT DE RÉFÉRENCE — RÉSONANCE
 
-Stack inchangée, zéro dépendance. IA hors socle. Aucun score/profil/diagnostic nulle part.
+**Dernière mise à jour : 11 septembre 2026**
 
-## Fichiers modifiés (additifs uniquement)
-- server/src/index.js : tables parcours/espaces/situations/choix/parties/reponses + seed démo, helpers ordre/situation/partie, routes /api/parties|/parties/:id|/choisir|/interrompre|/reprendre + /api/memoire, exports + /me/data + /me étendus aux parties (nécessité : sinon données utilisateur survivantes).
-- server/config.json : bloc5-1.0. server/package.json : test:bloc5, test inclut bloc5.
-- client/src/lib/api.ts (+parties/memoire), client/src/Parcours.tsx (nouveau), client/src/App.tsx (onglet Parcours + Mémoire du parcours au carnet).
+Ce fichier constitue la mémoire fonctionnelle et stratégique de référence du projet RÉSONANCE.
 
-## Fichiers créés
-- client/src/Parcours.tsx, server/tests/bloc5.test.js.
-
-## Migrations (auto)
-parcours, espaces, situations, choix, parties (user_id nullable, mécanisme Bloc 4), reponses (snapshots titre/texte/choix/fragment + position + date). Seed : « Première traversée (démo) », 2 espaces (Le seuil ×2 situations, Le chemin ×1), 3 choix/situation avec fragment.
-
-## Fonctionnalités
-Nouvelle partie anonyme ou rattachée si connecté (compte jamais obligatoire) ; situation courante seule (futur jamais révélé, pas de total) ; choisir → enregistre partie/situation/choix/espace/position/date ; interruption (en_pause, choix 409) / reprise exacte / terminée ; mémoire = choix + fragments (passé seul) affichée au carnet + exports JSON/HTML ; matière conservée pour émergence future, sans calcul.
-
-## Tests : 84 PASS + E2E 14/14 / 0 FAIL + build OK
-bloc3 25/25, delete 13/13, bloc4 25/25, bloc5 21/21, e2e 14/14.
-## Reste à valider par toi
-NOUVELLE PARTIE → SITUATION → CHOIX → SUIVANTE → QUITTER → REVENIR → REPRENDRE → CARNET, avec et sans compte.
+Il doit permettre de reprendre le projet sans repartir de zéro, même après plusieurs jours ou dans une nouvelle conversation.
 
 ---
 
-# BLOC 6.1 — modèle éditorial (NON COMMITÉ, en attente de validation humaine)
+# 1. IDENTITÉ DU PROJET
 
-Matière structurée pour le futur moteur. Aucune logique de sélection, aucun scoring, aucun frontend modifié.
+RÉSONANCE est un **jeu introspectif et projectif**, conçu comme une expérience ludique.
 
-## Fichiers modifiés (additifs uniquement)
-- server/src/index.js : section « Bloc 6.1 » (migrations + helpers + routes, ~200 lignes, avant `const PORT`).
-- server/config.json : version bloc5-1.0 → bloc6.1-1.0 (tracée sur les nouvelles séquences via config_version).
-- server/package.json : script test:bloc61, inclus dans test.
+Ce n'est :
 
-## Fichiers créés
-- server/tests/bloc6-1.test.js (30 tests).
+* ni un questionnaire ;
+* ni un test psychologique ;
+* ni un outil thérapeutique ;
+* ni un système de diagnostic ;
+* ni un système qui prétend révéler une vérité sur le joueur.
 
-## Base de données (migrations auto au boot, compatibles Bloc 5)
-- Nouvelles tables : stimuli (cle stable UNIQUE type-refId, 1 seule référence parmi image/texte/question via CHECK, intensité 1-3, variante_de, statut, version), stimulus_phases (M2M), phases (référentiel seed : accueil/exploration/expression/cloture), questions (type libre, formulation, intensité, variante_de, statut, ordre, version), configs_editoriales (UNIQUE nom+version, parametres JSON, versions immuables).
-- Colonnes ajoutées (ALTER try/catch, NULL/défaut) : texts.statut/intensite/version/variante_de, images.intensite, sequences.config_editoriale_id, parties.config_editoriale_id.
-- Seed : config « defaut » v1 = miroir du tirage config.json.
+### Principe fondateur
 
-## API (base propre, pas d'admin complète)
-- Admin : /api/admin/phases|questions|stimuli|configs (GET/POST/PATCH ; PATCH configs = statut seul ; type/référence stimulus immuables).
-- Lecture : GET /api/editorial/disponibles?type=&phase= (actifs uniquement à tous les niveaux).
-- Règles : type/référence cohérents, variante même type, phases actives, 1 stimulus par contenu, phase d'un stimulus sans phase = compatible partout.
+> **Le joueur donne du sens à ce qu'il choisit.
+> RÉSONANCE crée les conditions de cette résonance.
+> L'application ne donne pas de sens à sa place.**
 
-## Tests : 114 PASS / 0 FAIL + E2E PASS
-bloc3 25/25, delete 13/13, bloc4 25/25, bloc5 21/21, bloc6-1 30/30 (rejoints, inactifs exclus, variantes, phases, configs, compat Bloc 5, nettoyage par archivage), e2e PASS.
+Le joueur reste souverain de son interprétation.
+
+RÉSONANCE peut observer des choix, des répétitions, des évolutions ou des associations, mais ne doit jamais transformer ces observations en vérité psychologique imposée.
 
 ---
 
-# BLOC 6.2 — historique & mémoire (NON COMMITÉ, en attente de validation humaine)
+# 2. POSITIONNEMENT DE RÉSONANCE
 
-Journal append-only de faits Niveau 1 (cf. cahier IA §5 : observation affirmable, jamais d'hypothèse). Aucune logique d'exploitation, aucun frontend modifié, Bloc 5 non réécrit.
+RÉSONANCE doit être :
 
-## Fichiers modifiés (additifs uniquement)
-- server/src/index.js : section « Bloc 6.2 » (table + helpers + 3 lectures) + 8 points de capture dans les routes existantes + 2 DELETE dans effacerDonneesUtilisateur (cohérence suppression RGPD) + champ additif config_editoriale_id dans partieState.
-- server/package.json : script test:bloc62, inclus dans test.
+* curieux ;
+* mystérieux ;
+* élégant ;
+* intime ;
+* surprenant ;
+* adulte ;
+* suffisamment ludique pour donner envie de revenir.
 
-## Fichiers créés
-- server/tests/bloc6-2.test.js (24 tests).
+Il ne doit pas devenir :
 
-## Modèle
-- Table `evenements` (id, created_at, partie_id NULL, sequence_id NULL, type parmi presente/vue/choisie/choix_retire/rejetee/expression/reponse, image_id, stimulus_id, position, details JSON, config_version, config_editoriale_id). Types extensibles via constante, pas de CHECK rigide.
-- Capture : session/new → N 'presente' (deja_vue + fantome distingués, stimulus lié si enveloppé) ; choix → 'choix_retire' puis 'choisie' ; statut → événement du statut ; expression → 'expression' {silence} sans le texte ; parties/choisir → 'reponse' avec snapshot {situation/choix/fragment} ; créations séquence/partie snapshotent config_editoriale_id (defaut active max, NULL si aucune).
-- Lectures : GET /api/session/:id/evenements (même accès que carnet), GET /api/parties/:id/historique (état + événements + reponses snapshotées Bloc 5), GET /api/editorial/rencontres?image_id= (agrégats vues/choix/rejets/revisites/premier/dernier/séquences, sans user_id ni texte).
-- Dérivés laissés au futur moteur (documentés) : ignoré = présenté sans suite ; choisi ultérieurement = choisie après présentation antérieure ; répétition provoquée = fantome/deja_vue.
+* médicalisant ;
+* pseudo-psychologique ;
+* moralisateur ;
+* prescriptif ;
+* démonstratif ;
+* "coach" ;
+* machine à produire des profils.
 
-## Tests : 138 PASS / 0 FAIL + E2E PASS
-bloc3 25/25, delete 13/13, bloc4 25/25, bloc5 21/21, bloc6-1 30/30, bloc6-2 24/24 (ordre, non-réécriture, rejet, silence hors journal, revisite, rencontres sans fuite, snapshot partie, pause/reprise, purge cascade, SANS_SCORE partout), e2e PASS. Stable sur 3 passages.
+### Phrase de référence
 
----
+> **Tu choisis une image. Puis tu découvres pourquoi tu l'as choisie.**
 
-# BLOC 6.3 — moteur de tirage (NON COMMITÉ, en attente de validation humaine)
-
-Sélection éditoriale sans signification imposée (recettes F-020 à F-023). Fantômes Bloc 2 conservés tels quels, route et réponses HTTP inchangées, aucun frontend modifié.
-
-## Fichiers créés
-- server/src/moteur-tirage.js : service pur (graineAleatoire, hasardControle/mulberry32, melanger, composerTirage). Aucune pondération exposée/stockée/affichée.
-- server/tests/moteur-tirage.test.js (17 tests unitaires déterministes).
-- server/tests/bloc6-3.test.js (10 tests d'intégration).
-
-## Fichiers modifiés (additifs uniquement)
-- server/src/index.js : import moteur + remplacement du `sort aléatoire + slice` par `composerTirage` (candidats enrichis catégorie/intensité image+stimulus, récents = dernière séquence, config = params « defaut », contexte texte transmis) + helper configMoteurParams().
-- server/package.json : scripts test:moteur, test:bloc63, inclus dans test.
-
-## Moteur
-Disponibles actifs re-vérifiés → intensité max → compatibilités explicites (défaut neutre, 'exclue' écarté) → exclusion récents avec repli (jamais de panne) → part hasard (mulberry32 seedé en test, Math.random en prod) + complément glouton diversité catégorielle → ordre final brassé (aucune « bonne réponse »). Imposés (fantômes) comptés sans doublons. Clés config inconnues ignorées (composition 4/2/1 = blocs suivants).
-
-## Tests : 165 PASS / 0 FAIL + E2E PASS
-bloc3 25, delete 13, bloc4 25, bloc5 21, bloc6-1 30, bloc6-2 24, moteur 17, bloc6-3 10, e2e PASS. Nouveaux tests stables sur 2 passages.
+Cette phrase décrit une promesse d'expérience, pas une promesse de diagnostic.
 
 ---
 
-# BLOCS 6.4 → 6.8 — Signaux → Événements → Progression → Carnet → IA (NON COMMITÉS, validation humaine requise)
+# 3. NON-NÉGOCIABLES
 
-Ensemble cohérent, séparé par module préfixé du n° de bloc. Aucune mécanique inventée : chaque fonction cite sa source. Frontend untouched. Aucun commit/push/reset.
+## 3.1 Le joueur reste souverain
 
-## 6.4 Signaux — `src/signaux.js` + GET /api/session/:id/signaux + GET /api/parties/:id/signaux
-Délais (premier choix, expression, réponse) + comptes (présentées/choisies/retirées/rejetées/revisitées/silences/réponses) dérivés du journal 6.2, rien de stocké, `nature: 'observation'`, n'influence rien (cahier-technique §11).
+Aucune interprétation psychologique ne doit être présentée comme une vérité.
 
-## 6.5 Événements — `src/recurrences.js` + GET /api/editorial/recurrences
-Échelle cahier-IA §12 (ponctuel/répétition/significatif/fort, seuils paramétrables via config `seuils_recurrence`), `provoquee` distingué par fantôme (moteur §44), sources tracées (§36), intervention = possibilité, aucun effet moteur.
+Interdit :
 
-## 6.6 Progression — `src/progression.js` + GET /api/progression
-Compteur de séquences seul (règles §16, pas de niveaux chiffrés), 6 phases nominatives §31, plafond d'intensité progressif §33, paliers configurables `paliers_phase` (défauts techniques [3,6,10,15,21] à valider).
+> "Tu as peur de l'abandon."
 
-## 6.7 Carnet — GET /api/carnet/complet (entrées existantes inchangées)
-3 niveaux règles §32 (faits / parole_joueur / propositions_systeme), récurrences 6.5 non-ponctuelles, questions ouvertes §17. Manque signalé non inventé : marquage « à revenir » inexistant.
+Possible :
 
-## 6.8 IA hors socle — `src/garde-fous-ia.js` + GET /api/ia/statut
-Contrôle §37 sur exemples interdits explicites (§13/15/16/17/22/23), anti-hallucination §35 (histoire minimale §20), niveau configurable §38 (défaut 0 = absente). Génération explicitement « à spécifier ».
+> "La séparation apparaît plusieurs fois dans tes choix."
 
-## Tests : 236 PASS / 0 FAIL + E2E PASS
-Anciens inchangés et verts (165). Nouveaux : 6.4×13, 6.5×15, 6.6×10, 6.7×9, 6.8×18, intégration-6x×6 (chaîne complète, pas de boucle choix→profil→interprétation).
+Ou :
+
+> "Tu sembles revenir à cette image. Qu'est-ce qu'elle évoque pour toi aujourd'hui ?"
+
+---
+
+## 3.2 Les images ne possèdent pas de signification fixe
+
+Une image peut évoquer plusieurs choses selon la personne et selon le contexte.
+
+Exemple :
+
+Une porte peut évoquer :
+
+* possibilité ;
+* séparation ;
+* protection ;
+* curiosité ;
+* peur ;
+* souvenir ;
+* contrainte ;
+* passage.
+
+Le moteur doit donc stocker des **résonances possibles**, jamais une équivalence du type :
+
+> porte = changement.
+
+---
+
+## 3.3 Pas de score
+
+RÉSONANCE ne donne pas de score au joueur.
+
+Pas de :
+
+* personnalité X ;
+* profil Y ;
+* niveau psychologique ;
+* classement ;
+* "vous êtes à 78 %...".
+
+La progression éventuelle est une progression d'expérience, pas une progression psychologique.
+
+---
+
+## 3.4 Le chemin n'est pas imposé
+
+Les notions de :
+
+* parcours ;
+* espaces ;
+* situations ;
+* choix ;
+* fragments ;
+
+sont des éléments de l'architecture interne du jeu.
+
+Ils ne doivent pas imposer au joueur un parcours psychologique prédéfini.
+
+**Le parcours doit émerger progressivement des choix du joueur.**
+
+RÉSONANCE ne doit pas reproduire le principe d'un parcours linéaire imposé.
+
+---
+
+## 3.5 Le silence est une réponse
+
+Le joueur doit pouvoir :
+
+* ne pas répondre ;
+* passer ;
+* regarder ;
+* revenir ;
+* modifier un choix ;
+* conserver une image sans savoir pourquoi.
+
+L'absence de réponse constitue une possibilité normale du jeu.
+
+---
+
+# 4. ÉTAT TECHNIQUE ACTUEL
+
+Stack :
+
+* React ;
+* Vite ;
+* TypeScript ;
+* Node.js ;
+* Express ;
+* SQLite (`node:sqlite`) ;
+* migration PostgreSQL possible ultérieurement.
+
+L'IA n'est pas nécessaire au fonctionnement du socle.
+
+### Architecture générale
+
+Le projet est organisé autour de :
+
+* `app/client`
+* `app/server`
+* `app/server/data`
+* `app/server/src`
+* `app/server/tests`
+* `app/server/uploads`
+* `app/ETAT_REFERENCE.md`
+
+Le dépôt GitHub officiel est :
+
+`ariltone/resonnance`
+
+---
+
+# 5. ÉTAT DES BLOCS
+
+## Bloc 1
+
+Validé en jeu.
+
+## Bloc 2
+
+Validé en jeu.
+
+## Bloc 3
+
+Validé et figé.
+
+## Bloc 4
+
+Validé bout-en-bout.
+
+## Bloc 5
+
+Implémenté.
+
+Le parcours permet notamment :
+
+* création d'une partie ;
+* situation courante ;
+* choix ;
+* interruption ;
+* reprise ;
+* mémoire ;
+* rattachement éventuel à un compte.
+
+Le compte n'est jamais obligatoire pour jouer.
+
+## Bloc 6
+
+Le Bloc 6 a été conçu autour de la matière permettant à RÉSONANCE de devenir progressivement un système capable d'observer l'expérience du joueur sans l'interpréter à sa place.
+
+Éléments travaillés :
+
+* modèle éditorial ;
+* mémoire / historique ;
+* tirage et sélection ;
+* signaux ;
+* événements et récurrences ;
+* progression ;
+* carnet ;
+* garde-fous concernant l'IA.
+
+### Décisions associées au Bloc 6
+
+* les récurrences sont des observations ;
+* elles sont propres au joueur ;
+* elles ne constituent pas des diagnostics ;
+* les seuils restent configurables et ne sont pas des vérités de design ;
+* l'intensité retenue pour le jeu est de **3 niveaux**, pas 5 ;
+* les phases sont des phases d'expérience, pas des niveaux psychologiques.
+
+### Six phases d'expérience
+
+1. Entrer
+2. Résonner
+3. Approfondir
+4. Déplacer
+5. Relier
+6. Formuler
+
+Ces phases décrivent l'évolution possible de l'expérience, pas l'état psychologique du joueur.
+
+---
+
+# 6. INTENSITÉ
+
+RÉSONANCE utilise trois niveaux d'intensité.
+
+Proposition de lecture :
+
+1. **Léger**
+2. **Profond**
+3. **Confrontant**
+
+L'intensité concerne la nature de l'expérience proposée, pas une mesure de l'état du joueur.
+
+---
+
+# 7. RÉCURRENCES ET MÉMOIRE
+
+La mémoire est importante parce qu'elle permet à RÉSONANCE de devenir autre chose qu'une succession de tirages indépendants.
+
+Mais la mémoire doit rester descriptive.
+
+Le système peut constater :
+
+> "Cette thématique apparaît régulièrement."
+
+Il ne doit pas conclure :
+
+> "Tu as peur de..."
+
+### Types de récurrence possibles
+
+* visuelle ;
+* thématique ;
+* narrative ;
+* verbale ;
+* comportementale.
+
+Les récurrences doivent être suffisamment espacées pour éviter de transformer une répétition accidentelle en signal artificiel.
+
+Une répétition peut être :
+
+* accidentelle ;
+* significative pour le joueur ;
+* ou simplement intéressante.
+
+Le système ne décide pas à sa place.
+
+---
+
+# 8. MOTEUR ÉDITORIAL
+
+Le moteur repose notamment sur quatre familles :
+
+* textes ;
+* images ;
+* invitations ;
+* éléments de perspective.
+
+Les images sont des supports projectifs et non des illustrations littérales des textes.
+
+Le moteur doit rechercher un équilibre entre :
+
+* diversité ;
+* cohérence ;
+* surprise ;
+* ambiguïté ;
+* absence de réponse évidente.
+
+La relation texte / image peut être :
+
+* forte ;
+* moyenne ;
+* neutre ;
+* occasionnellement contrastée.
+
+Une image peut appartenir à plusieurs familles ou résonances.
+
+---
+
+# 9. VOCABULAIRE DE RÉSONANCE
+
+Le vocabulaire de référence comprend notamment :
+
+* mouvement ;
+* immobilité ;
+* séparation ;
+* lien ;
+* solitude ;
+* liberté ;
+* peur ;
+* désir ;
+* choix ;
+* attente ;
+* transformation ;
+* identité ;
+* regard ;
+* limite ;
+* passage ;
+* perte ;
+* recommencement.
+
+Ce vocabulaire sert au moteur éditorial et à l'observation interne.
+
+Il ne doit pas être transformé en étiquettes psychologiques affichées au joueur.
+
+---
+
+# 10. PHOTOTHÈQUE
+
+La photographie constitue un élément central de RÉSONANCE.
+
+Le premier corpus cible est de **50 photographies en noir et blanc**, suffisamment diverses pour éviter l'impression de mécanique répétitive.
+
+Répartition cible :
+
+* 8 silhouettes / corps ;
+* 7 seuils / architectures ;
+* 8 paysages / chemins / horizons ;
+* 7 objets / détails ;
+* 7 ombres / reflets / lumières ;
+* 7 scènes humaines / relations ;
+* 6 abstraites / ambiguës.
+
+Total : **50 images**.
+
+Le catalogue doit notamment conserver :
+
+* identifiant ;
+* nom de fichier ;
+* famille visuelle ;
+* thèmes de résonance ;
+* intensité ;
+* phase ;
+* sensibilité éventuelle ;
+* licence ;
+* source ;
+* auteur ;
+* URL ;
+* note éditoriale interne.
+
+### Règle importante
+
+Une image ne doit pas être choisie uniquement parce qu'elle "illustre" le texte.
+
+Une certaine ambiguïté est recherchée.
+
+---
+
+# 11. CONTENU ÉDITORIAL
+
+Les textes de RÉSONANCE peuvent être inspirés par des idées issues notamment de :
+
+* Jung ;
+* Osho ;
+* l'Évangile de Thomas ;
+* autres traditions philosophiques ou introspectives.
+
+Mais les textes intégrés à RÉSONANCE doivent être **originaux**.
+
+Ils ne doivent pas être des paraphrases trop proches de textes existants.
+
+L'inspiration peut nourrir :
+
+* une idée ;
+* une question ;
+* une tension ;
+* une image mentale ;
+* une formulation originale.
+
+---
+
+# 12. QUESTIONS ET INVITATIONS
+
+Les questions peuvent porter notamment sur :
+
+* l'attraction ;
+* le rejet ;
+* le détail ;
+* l'émotion ;
+* la projection ;
+* le personnel ;
+* le déplacement ;
+* la temporalité.
+
+Elles ne doivent pas suggérer la réponse.
+
+Exemple acceptable :
+
+> "Qu'est-ce qui t'attire ici ?"
+
+Exemple à éviter :
+
+> "Est-ce que cette image représente ta peur de l'abandon ?"
+
+---
+
+# 13. CARNET
+
+Le carnet est une pièce centrale de l'expérience.
+
+Il conserve notamment :
+
+* date ;
+* question éventuelle ;
+* images montrées ;
+* image choisie ;
+* images rejetées ;
+* réaction ;
+* texte personnel ;
+* mots-clés éventuels ;
+* émotions éventuellement exprimées ;
+* insight formulé par le joueur ;
+* question ouverte ;
+* action éventuelle.
+
+Le carnet doit conserver la trace de l'expérience telle qu'elle a réellement été vécue.
+
+Les contenus rencontrés pendant une session doivent rester historiquement cohérents : une modification ultérieure du catalogue ne doit pas réécrire rétroactivement ce que le joueur a rencontré.
+
+---
+
+# 14. COMPTE UTILISATEUR — DÉCISION PRODUIT
+
+**Décision : le compte ne doit jamais être une barrière à l'entrée.**
+
+Le joueur doit pouvoir :
+
+1. arriver ;
+2. jouer ;
+3. vivre l'expérience ;
+4. obtenir son carnet ;
+5. télécharger son carnet ;
+
+sans créer de compte.
+
+Le compte devient intéressant **après que RÉSONANCE a apporté de la valeur**.
+
+Proposition de formulation :
+
+> **Conserver mon carnet dans RÉSONANCE**
+
+L'objectif du compte est notamment de permettre :
+
+* de retrouver ses expériences ;
+* de conserver ses carnets ;
+* de poursuivre une expérience ;
+* d'observer son évolution dans le temps ;
+* de retrouver ses données depuis un autre appareil.
+
+### Règle essentielle
+
+Si un joueur crée un compte après avoir joué, son expérience déjà réalisée doit pouvoir être **rattachée à son compte sans être rejouée**.
+
+Il ne doit jamais être placé devant :
+
+> "Crée un compte pour recommencer."
+
+L'expérience vécue doit rester acquise.
+
+### Principe produit
+
+> **Tu peux partir. Mais si tu veux, RÉSONANCE se souvient de toi.**
+
+Cette logique doit guider l'architecture future du compte et du carnet.
+
+---
+
+# 15. IA
+
+L'IA est volontairement absente du socle nécessaire au fonctionnement du jeu.
+
+Elle pourra éventuellement intervenir plus tard pour :
+
+* reformuler ;
+* mettre en relation ;
+* poser des questions ;
+* faire émerger des observations ;
+* présenter des évolutions ;
+* montrer certaines contradictions ou ruptures.
+
+Elle ne doit jamais :
+
+* diagnostiquer ;
+* profiler ;
+* affirmer une vérité psychologique ;
+* attribuer une cause cachée à un comportement ;
+* dire au joueur ce qu'il "est".
+
+L'IA intervient donc **à terme**, une fois que le jeu fonctionne correctement sans elle.
+
+---
+
+# 16. ANGLE MORT
+
+L'angle mort n'est jamais une affirmation.
+
+Il peut être formulé comme une question ou une hypothèse ouverte.
+
+Jamais :
+
+> "Voici ton angle mort."
+
+Plutôt :
+
+> "Une chose semble moins présente dans tes choix. Est-ce que cela te parle ?"
+
+Le joueur reste libre d'accepter, de rejeter ou d'ignorer cette hypothèse.
+
+---
+
+# 17. PROGRESSION
+
+La progression de RÉSONANCE est personnelle.
+
+Elle ne doit pas prendre la forme d'une montée de niveaux psychologiques.
+
+Des éléments ludiques peuvent néanmoins matérialiser l'expérience :
+
+* collections ;
+* cartes ;
+* traces ;
+* fragments ;
+* chemins ;
+* constellations ;
+* découvertes.
+
+Le jeu peut donner envie de revenir sans transformer le joueur en "profil".
+
+---
+
+# 18. SESSIONS FUTURES
+
+Plusieurs types de sessions peuvent exister à terme :
+
+* libre ;
+* question ;
+* miroir ;
+* contraste ;
+* retour ;
+* images évitées ;
+* évolution ;
+* synthèse.
+
+Ces modes doivent rester des propositions d'expérience, pas des tests psychologiques.
+
+---
+
+# 19. MODÈLE ÉCONOMIQUE — ORIENTATION STRATÉGIQUE
+
+Orientation actuellement privilégiée :
+
+> **RÉSONANCE pourrait être gratuit pour le joueur.**
+
+L'objectif est notamment d'éviter un modèle nécessitant :
+
+* prospection ;
+* devis ;
+* facturation ;
+* gestion de clients ;
+* SAV commercial ;
+* rendez-vous commerciaux.
+
+Une monétisation indirecte pourrait être envisagée ultérieurement :
+
+* affiliation ;
+* recommandations de livres ;
+* carnets ;
+* jeux de cartes ;
+* ouvrages photographiques ;
+* ateliers ;
+* partenaires cohérents avec l'univers de RÉSONANCE ;
+* éventuellement fonctionnalités premium ;
+* éventuellement dons ou soutien.
+
+### Règle absolue
+
+La monétisation ne doit jamais influencer :
+
+* les tirages ;
+* les choix ;
+* les interprétations ;
+* les récurrences ;
+* les contenus présentés au joueur.
+
+Aucun produit affilié ne doit devenir une réponse implicite à un supposé problème psychologique du joueur.
+
+La priorité actuelle n'est donc **pas la monétisation**.
+
+La priorité est :
+
+> **Créer une expérience suffisamment bonne pour que les gens aient envie de jouer et de revenir.**
+
+---
+
+# 20. PHILOSOPHIE PRODUIT
+
+Le principal actif de RÉSONANCE n'est pas la technologie.
+
+C'est la qualité de l'expérience.
+
+Avant d'ajouter :
+
+* IA ;
+* comptes complexes ;
+* monétisation ;
+* gamification ;
+* fonctionnalités sociales ;
+
+il faut vérifier que le cœur du jeu fonctionne :
+
+> texte → tirage → choix → expression → mémoire → retour.
+
+La question centrale n'est pas :
+
+> "Qu'est-ce qu'on peut ajouter ?"
+
+mais :
+
+> **"Est-ce que cette expérience donne réellement envie de continuer ?"**
+
+---
+
+# 21. CONTINUITÉ DU PROJET
+
+Ce fichier est la mémoire externe officielle du projet.
+
+Les décisions importantes doivent y être ajoutées afin de ne pas dépendre uniquement de la mémoire des conversations.
+
+Chaque élément nouveau doit être classé mentalement comme :
+
+* **DÉCIDÉ** : règle ou choix adopté ;
+* **EN RÉFLEXION** : piste sérieuse mais non figée ;
+* **IDÉE** : possibilité non engagée ;
+* **À FAIRE PLUS TARD** : décision prise mais volontairement différée.
+
+Une hypothèse ne doit jamais être transformée silencieusement en décision.
+
+---
+
+# 22. RÔLE DES INTERVENANTS
+
+### Muse / outils de développement
+
+Construisent et modifient le code.
+
+### ChatGPT / réflexion produit
+
+Le rôle est notamment de :
+
+* maintenir la continuité du projet ;
+* challenger les idées lorsque nécessaire ;
+* faire émerger les incohérences ;
+* travailler l'expérience utilisateur ;
+* travailler le contenu ;
+* travailler les règles du jeu ;
+* travailler l'architecture fonctionnelle ;
+* anticiper les conséquences des décisions ;
+* documenter les décisions importantes.
+
+Le rôle n'est pas de micro-superviser inutilement chaque détail de code lorsque celui-ci ne change pas le produit.
+
+### Principe
+
+> **Le code fait fonctionner RÉSONANCE.
+> La conception décide ce que RÉSONANCE doit devenir.**
+
+---
+
+# 23. PROCHAINES PRIORITÉS
+
+Ordre de priorité général :
+
+1. Valider réellement l'expérience jouable existante.
+2. Vérifier la qualité du parcours complet.
+3. Enrichir et structurer le corpus éditorial.
+4. Constituer une photothèque réellement exploitable.
+5. Tester la répétition / récurrence sur plusieurs expériences.
+6. Améliorer progressivement le carnet.
+7. Concevoir proprement le futur système de compte et de rattachement du carnet.
+8. Tester le retour des joueurs.
+9. Seulement ensuite envisager sérieusement IA et monétisation.
+
+---
+
+# 24. RÈGLE DE CONTINUITÉ ABSOLUE
+
+Lorsqu'une nouvelle conversation reprend RÉSONANCE :
+
+**ne pas repartir de zéro.**
+
+Commencer par considérer ce fichier comme l'état de référence, puis distinguer :
+
+* ce qui est déjà décidé ;
+* ce qui est effectivement implémenté ;
+* ce qui reste à tester ;
+* ce qui est en réflexion ;
+* ce qui n'est qu'une idée.
+
+Ne jamais présenter une hypothèse comme une décision.
+
+Ne jamais prétendre qu'une vérification, une recherche ou une modification a été effectuée si elle ne l'a pas réellement été.
+
